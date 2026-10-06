@@ -82,9 +82,10 @@ def main():
     for source, name, inc, libs in (
         (ROOT / 'windows/build/profile_host.cpp', 'profile_host', [product, adapter, out], ['d3d12.lib', 'dxgi.lib']),
         (ROOT / 'windows/build/check_encode.cpp', 'check_encode', [headers, ROOT / 'windows/src/core'], [str(library)]),
+        (ROOT / 'windows/build/check_direct_original.cpp', 'check_direct_original', [headers, ROOT / 'windows/src/core'], [str(library)]),
         (fixture_path, 'host_contract', [product], ['d3d12.lib', 'dxgi.lib']),
     ):
-        tool_flags = flags if name == 'check_encode' else [f for f in flags if f != '/DNOMINMAX']
+        tool_flags = flags if name in ('check_encode', 'check_direct_original') else [f for f in flags if f != '/DNOMINMAX']
         run(['cl', *tool_flags, *['/I' + str(p) for p in inc], str(source), '/Fo' + str(out / (name + '.obj')),
              '/Fe' + str(out / (name + '.exe')), '/link', *libs])
     run([sys.executable, str(host / 'third_party/mochizuki/windows/build/build_network.py'), 'rdna4',
@@ -94,7 +95,8 @@ def main():
     result = {'kind': 'offline-production-check' if args.production else 'offline-diagnostics-only',
               'host_sources': identities, 'commands': commands,
               'study_sources': {str(p.relative_to(ROOT)): digest(p) for p in
-                                (Path(__file__), ROOT / 'windows/build/profile_host.cpp', ROOT / 'windows/build/check_encode.cpp')},
+                                (Path(__file__), ROOT / 'windows/build/profile_host.cpp', ROOT / 'windows/build/check_encode.cpp',
+                                 ROOT / 'windows/build/check_direct_original.cpp')},
               'artifacts': {str(p.relative_to(out)): digest(p) for p in sorted(out.rglob('*'))
                             if p.suffix in ('.dll', '.exe', '.spv', '.txt')}}
     (out / 'offline-build.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')

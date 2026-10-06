@@ -311,7 +311,7 @@ struct LinearInputBinding {
     VkImage image{};
     VkImageView view{};
     VkDescriptorPool pool{};
-    VkDescriptorSet set{};
+    VkDescriptorSet set{}, transfer_set{};
     std::shared_ptr<int> owner;
     ~LinearInputBinding() {
         if (pool) vkDestroyDescriptorPool(device, pool, nullptr);
@@ -324,7 +324,7 @@ struct Runtime::Impl {
     nrvk::Kernel alpha, mask_pre, mask_resolve;
     // The linear-light path: the proxy is made in place on tex_in and the
     // original kept here for the decode. Only when RuntimeConfig::linear_input.
-    nrvk::Kernel encode, encode_sampled, transfer_pass;
+    nrvk::Kernel encode, encode_sampled, encode_direct, transfer_pass;
     std::shared_ptr<int> input_binding_owner = std::make_shared<int>(0);
     nrvk::Context::Image keep{};
     bool linear{};
@@ -659,6 +659,7 @@ struct Runtime::Impl {
         if (alpha.device) alpha.destroy();
         if (encode.device) encode.destroy();
         if (encode_sampled.device) encode_sampled.destroy();
+        if (encode_direct.device) encode_direct.destroy();
         if (transfer_pass.device) transfer_pass.destroy();
         if (prep_k.device) prep_k.destroy();
         if (prep_back_k.device) prep_back_k.destroy();
@@ -1024,6 +1025,9 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
             // This default set is not dispatched; each binding supplies its own.
             impl_->encode_sampled.create(s.ctx, (adapters / "runtime_encode_sampled.spv").string(), {}, 16,
                                         {&tex_in_storage, &keep_storage, &impl_->keep});
+            if (!config.native_compose)
+                impl_->encode_direct.create(s.ctx, (adapters / "runtime_encode_direct.spv").string(), {}, 16,
+                                            {&tex_in_storage, &keep_storage, &impl_->keep});
         }
     }
     // The transfer runs on every frame at the FRAME extent: `result` and
@@ -1467,6 +1471,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
     const bool sampled_encode = input_binding && impl_->encode_sampled.device &&
         input_binding->owner == impl_->input_binding_owner && input_binding->image == frame.image &&
         (frame.usage & VK_IMAGE_USAGE_SAMPLED_BIT);
+    const bool direct_original = sampled_encode && impl_->encode_direct.device && input_binding->transfer_set;
     const bool sampled_colour = ds || sampled_encode;
     barrier(cmd, frame.image, frame.before, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             frame.before_stage, frame.before_access,
@@ -1549,7 +1554,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         struct { uint32_t w, h; float white, knee; } push{nw, nh, impl_->white_point, 0.75f};
-        dispatch(cmd, sampled_encode ? impl_->encode_sampled : impl_->encode,
+        dispatch(cmd, direct_original ? impl_->encode_direct : sampled_encode ? impl_->encode_sampled : impl_->encode,
                  (nw + 7) / 8, (nh + 7) / 8, 1, &push, sizeof push,
                  sampled_encode ? input_binding->set : VK_NULL_HANDLE);
         barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -2019,7 +2024,8 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                      c.detail_strength, c.colour_strength, c.max_ratio, impl_->white_point};
             const nrvk::Kernel& transfer =
                 prep_on && impl_->transfer_prep.device ? impl_->transfer_prep : impl_->transfer_pass;
-            dispatch(cmd, transfer, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, &push, sizeof push);
+            dispatch(cmd, transfer, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, &push, sizeof push,
+                     direct_original ? input_binding->transfer_set : VK_NULL_HANDLE);
             compute_barrier(cmd);
         }
         NR_PROFILE_MARK(cmd, 7);
@@ -2104,9 +2110,12 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
     vi.image = frame.image; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = frame.format;
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     if (vkCreateImageView(binding->device, &vi, nullptr, &binding->view) != VK_SUCCESS) return {};
-    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
+    const bool direct_original = impl_->encode_direct.device != VK_NULL_HANDLE;
+    const VkDescriptorPoolSize sizes[] = {
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, direct_original ? 4u : 2u},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, direct_original ? 3u : 1u}};
     VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pi.maxSets = 1; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
+    pi.maxSets = direct_original ? 2u : 1u; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
     if (vkCreateDescriptorPool(binding->device, &pi, nullptr, &binding->pool) != VK_SUCCESS) return {};
     VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     ai.descriptorPool = binding->pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &impl_->encode_sampled.dsl;
@@ -2123,6 +2132,15 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
         writes[i].pImageInfo = &images[i];
     }
     vkUpdateDescriptorSets(binding->device, 3, writes, 0, nullptr);
+    if (direct_original) {
+        nrvk::Context::Image original = impl_->keep;
+        original.view = binding->view;
+        original.layout = VK_IMAGE_LAYOUT_GENERAL;
+        auto& session = impl_->session;
+        binding->transfer_set = kernel_set(binding->device, binding->pool, impl_->transfer_pass, {},
+                                          {&session.surf0, &session.tex_in, &original, &session.surf0});
+        if (!binding->transfer_set) return {};
+    }
     return binding;
 }
 

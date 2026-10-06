@@ -33,7 +33,9 @@ void main() {
 #else
     const vec4 src = imageLoad(proxy, xy);
 #endif
+#if !NR_ENCODE_DIRECT
     imageStore(keep, xy, src);
+#endif
     // OptiScaler DLSS-NR's encode: the frame over the white point, a soft knee
     // on luminance from `knee` (0.75) to 1, then sRGB.
     vec3 n = max(src.rgb, vec3(0.0)) / max(pc.white, 1e-4);

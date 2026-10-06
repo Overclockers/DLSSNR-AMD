@@ -27,7 +27,7 @@ from pathlib import Path
 
 R = Path(__file__).resolve().parents[2]
 GLSLANG = R / 'toolchain/glslang/bin/glslang'
-RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_encode_sampled', 'runtime_transfer', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
+RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_encode_sampled', 'runtime_encode_direct', 'runtime_transfer', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
 MOTION = ['motion_luma', 'motion_estimate']
 
 
@@ -95,8 +95,11 @@ def main():
         glslang(a.arch, R / 'windows/shaders/passes' / f'{k}.comp', [], out / 'temporal' / f'{k}.spv')
     shutil.copy2(out / 'shader-constants.txt', out / 'temporal' / 'shader-constants.txt')
     for k in RUNTIME:
-        source = 'runtime_encode' if k == 'runtime_encode_sampled' else k
-        defines = ['NR_ENCODE_SAMPLED=1'] if k == 'runtime_encode_sampled' else []
+        sampled_encode = k in ('runtime_encode_sampled', 'runtime_encode_direct')
+        source = 'runtime_encode' if sampled_encode else k
+        defines = ['NR_ENCODE_SAMPLED=1'] if sampled_encode else []
+        if k == 'runtime_encode_direct':
+            defines.append('NR_ENCODE_DIRECT=1')
         glslang(a.arch, R / 'windows/shaders/passes' / f'{source}.comp', defines, out / 'runtime' / f'{k}.spv')
     print(f'{out}: {len(pipelines)} network pipelines, {len(table["variants"]) + len(MOTION)} temporal, '
           f'{len(RUNTIME)} runtime')

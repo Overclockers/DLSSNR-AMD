@@ -2,7 +2,7 @@
 
 `windows/build/profile_host.py` builds the current `dlss-5-amd-project` Mochizuki
 adapter, an offline D3D12/Vulkan timing program, the host's existing ABI/GPU
-fixture, and a full-precision input-encoding comparison. It reads the host
+fixture, and full-precision encoding/composition comparisons. It reads the host
 checkout and writes only below this repository's ignored `build/` directory.
 It requires the matching host source with `nr_profile.hpp`, `MochizukiProfile.h`
 and the linear-input binding integration, plus the host's pinned Vulkan headers
@@ -96,6 +96,7 @@ temporal gameplay. The legacy UI's network measurement covers the core's full
 
 ```powershell
 & "$study/check_encode.exe" "$study/dlssnr-amd/shaders/runtime"
+& "$study/check_direct_original.exe" "$study/dlssnr-amd/shaders/runtime"
 & "$study/host_contract.exe" "$study/MochizukiNrRuntime.dll"
 & "$study/host_contract.exe" "$study/MochizukiNrRuntime.dll" $assets
 ```
@@ -107,6 +108,15 @@ large HDR values and alpha, at white points 0.01/1/2/100. It fails on any change
 32-bit value. It does not assert equivalence for NaN/Inf payloads or other GPUs.
 The existing host fixture checks ABI, replay, two queues, geometry retention,
 history ordering, formats, DRS, cancellation and completed-tail destruction.
+
+`check_direct_original` compares the FP32 proxy and composition results when the
+transfer pass samples the original packed image instead of its RGBA32F copy.
+It checks both input formats at 257x129, four white points and five composition
+settings, including finite half encodings, subnormals, negative half values and
+HDR values. All 48 arrays (6,365,376 32-bit values) must match exactly. This does
+not cover NaN/Inf payloads or replace the independent full-output and host
+lifetime checks. The extra `runtime_encode_direct.spv` is required by a matching
+runtime build; the previous encode variants remain available for fallback.
 
 Compare separately saved full outputs as well. Passing an encode probe or a
 host fixture alone does not establish real-game performance or image quality.
