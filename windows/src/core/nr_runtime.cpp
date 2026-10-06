@@ -1,4 +1,5 @@
 #include "nr_runtime.hpp"
+#include "nr_profile.hpp"
 #include "nr_native_plan.hpp"
 #include "nr_runtime_dispatch.hpp"
 #define NR_NO_MAIN 1
@@ -305,12 +306,26 @@ struct Temporal {
     }
 };
 
+struct LinearInputBinding {
+    VkDevice device{};
+    VkImage image{};
+    VkImageView view{};
+    VkDescriptorPool pool{};
+    VkDescriptorSet set{};
+    std::shared_ptr<int> owner;
+    ~LinearInputBinding() {
+        if (pool) vkDestroyDescriptorPool(device, pool, nullptr);
+        if (view) vkDestroyImageView(device, view, nullptr);
+    }
+};
+
 struct Runtime::Impl {
     NrSession session;
     nrvk::Kernel alpha, mask_pre, mask_resolve;
     // The linear-light path: the proxy is made in place on tex_in and the
     // original kept here for the decode. Only when RuntimeConfig::linear_input.
-    nrvk::Kernel encode, transfer_pass;
+    nrvk::Kernel encode, encode_sampled, transfer_pass;
+    std::shared_ptr<int> input_binding_owner = std::make_shared<int>(0);
     nrvk::Context::Image keep{};
     bool linear{};
     // Preprocess (RuntimeConfig::preprocess): runtime_prep.comp's meter,
@@ -643,6 +658,7 @@ struct Runtime::Impl {
         if (depth_copy.device) depth_copy.destroy();
         if (alpha.device) alpha.destroy();
         if (encode.device) encode.destroy();
+        if (encode_sampled.device) encode_sampled.destroy();
         if (transfer_pass.device) transfer_pass.destroy();
         if (prep_k.device) prep_k.destroy();
         if (prep_back_k.device) prep_back_k.destroy();
@@ -997,6 +1013,18 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
         tex_in_storage.layout = VK_IMAGE_LAYOUT_GENERAL;
         impl_->encode.create(s.ctx, (adapters / "runtime_encode.spv").string(), {}, 16,
                              {&tex_in_storage, &keep_storage});
+        // Exact texel fetch replaces the nearest blit's format conversion.
+        // The host supplies a binding whose lifetime covers the recorded work.
+        const bool packed_float = config.colour_format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
+                                  config.colour_format == VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(host.physical, config.colour_format, &fp);
+        if (packed_float && !impl_->scaled && config.max_passes == 1 && !config.preprocess &&
+            !mask_config.width && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
+            // This default set is not dispatched; each binding supplies its own.
+            impl_->encode_sampled.create(s.ctx, (adapters / "runtime_encode_sampled.spv").string(), {}, 16,
+                                        {&tex_in_storage, &keep_storage, &impl_->keep});
+        }
     }
     // The transfer runs on every frame at the FRAME extent: `result` and
     // `shown` are model-sized (sampled bilinearly when scaled), `keep` is the
@@ -1401,6 +1429,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         barrier(cmd,t.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t.after,VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_ACCESS_TRANSFER_READ_BIT,t.after_stage,t.after_access);
     }
+    NR_PROFILE_MARK(cmd, 2);
     impl_->controls(effective);
     // The network extent (Model Resolution); the frame is frame.width x frame.height.
     const uint32_t nw = impl_->mw, nh = impl_->mh;
@@ -1434,14 +1463,21 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                                     engine->motion.format, impl_->temporal.hcur);
     if (sets && sets->cview) ds = sets;
     const bool mv_direct = sets && sets->mview;
-    barrier(cmd, frame.image, frame.before, ds ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    const auto* input_binding = frame.linear_input;
+    const bool sampled_encode = input_binding && impl_->encode_sampled.device &&
+        input_binding->owner == impl_->input_binding_owner && input_binding->image == frame.image &&
+        (frame.usage & VK_IMAGE_USAGE_SAMPLED_BIT);
+    const bool sampled_colour = ds || sampled_encode;
+    barrier(cmd, frame.image, frame.before, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             frame.before_stage, frame.before_access,
-            ds ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
-            ds ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT);
+            sampled_colour ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
+            sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT);
     if (!ds)
-    barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            sampled_encode ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+            sampled_encode ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
+            sampled_encode ? VK_ACCESS_SHADER_WRITE_BIT : VK_ACCESS_TRANSFER_WRITE_BIT);
     VkImageCopy region{};
     region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.extent = {frame.width, frame.height, 1};
@@ -1459,8 +1495,8 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
     }
-    if (ds) {
-        // Nothing to copy: the pre and post blocks sample the frame itself.
+    if (sampled_colour) {
+        // The encode, or the pre/post blocks, samples the frame itself.
     } else if (impl_->direct_in) {
         // The bits as they are (an *_SRGB frame into its UNORM twin: the same
         // bits the private transfer image held); the kernels' sampling does
@@ -1504,14 +1540,18 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
+    NR_PROFILE_MARK(cmd, 3);
     if (impl_->linear) {
         // Linear light: make the proxy in place and keep the original. The
         // network reads tex_in in SHADER_READ_ONLY like every other frame.
+        if (!sampled_encode)
         barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         struct { uint32_t w, h; float white, knee; } push{nw, nh, impl_->white_point, 0.75f};
-        dispatch(cmd, impl_->encode, (nw + 7) / 8, (nh + 7) / 8, 1, &push, sizeof push);
+        dispatch(cmd, sampled_encode ? impl_->encode_sampled : impl_->encode,
+                 (nw + 7) / 8, (nh + 7) / 8, 1, &push, sizeof push,
+                 sampled_encode ? input_binding->set : VK_NULL_HANDLE);
         barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -1520,6 +1560,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
+    NR_PROFILE_MARK(cmd, 4);
     // Preprocess: meter the frame, keep it, and put what the network is to see
     // in tex_in. A change of settings resets the meter and, below, the history.
     const Preprocess& pp = c.preprocess;
@@ -1855,6 +1896,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
             if (temporal) copy_general(impl_->history_store[pass], t.history);
         }
+        if (passes == 1) NR_PROFILE_MARK(cmd, 5);
         for (size_t i = 0; i < s.steps.size(); ++i) {
             const auto& step = s.steps[i];
             const nrvk::Kernel* use = step.k;
@@ -1896,6 +1938,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
             compute_barrier(cmd, s.runner.exec_barrier && !last,
                             s.runner.inv_barrier && !last);
         }
+        if (passes == 1) NR_PROFILE_MARK(cmd, 6);
         if (temporal && !t.pingpong) {
             // History is a copy of what the MODEL wrote - the temporal post variant
             // puts that on the second surface, before the application strength -
@@ -1979,6 +2022,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
             dispatch(cmd, transfer, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, &push, sizeof push);
             compute_barrier(cmd);
         }
+        NR_PROFILE_MARK(cmd, 7);
         const VkImage out = impl_->scaled ? impl_->full_out.handle : s.surf0.handle;
         const uint32_t extent[] = {frame.width, frame.height, uint32_t(impl_->round_u8)};
         if (!impl_->post_alpha || mask)
@@ -1986,10 +2030,10 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         barrier(cmd, out, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-        barrier(cmd, frame.image, ds ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        barrier(cmd, frame.image, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                ds ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
-                ds ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
+                sampled_colour ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
+                sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
         if (impl_->direct_out) {
             // Already the frame's bits (an *_SRGB frame takes its UNORM twin's).
@@ -2022,9 +2066,9 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         info.applied = true;
     }
     barrier(cmd, frame.image, c.apply_model ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-                              : ds ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            frame.after, c.apply_model || !ds ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            c.apply_model ? VK_ACCESS_TRANSFER_WRITE_BIT : ds ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
+                              : sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            frame.after, c.apply_model || !sampled_colour ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            c.apply_model ? VK_ACCESS_TRANSFER_WRITE_BIT : sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
             frame.after_stage, frame.after_access);
     if (ds && engine->depth.image)
         barrier(cmd, engine->depth.image, VK_IMAGE_LAYOUT_GENERAL, engine->depth.after,
@@ -2044,6 +2088,40 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         impl_->read_timing();
     }
     return result;
+}
+
+std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame& frame) {
+    if (!impl_->encode_sampled.device || !frame.image || frame.format != impl_->colour_format ||
+        frame.width != impl_->width || frame.height != impl_->height || !(frame.usage & VK_IMAGE_USAGE_SAMPLED_BIT))
+        return {};
+    auto binding = std::make_shared<LinearInputBinding>();
+    binding->device = impl_->session.ctx.device;
+    binding->image = frame.image;
+    binding->owner = impl_->input_binding_owner;
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = frame.image; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = frame.format;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    if (vkCreateImageView(binding->device, &vi, nullptr, &binding->view) != VK_SUCCESS) return {};
+    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
+    VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    pi.maxSets = 1; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
+    if (vkCreateDescriptorPool(binding->device, &pi, nullptr, &binding->pool) != VK_SUCCESS) return {};
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = binding->pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &impl_->encode_sampled.dsl;
+    if (vkAllocateDescriptorSets(binding->device, &ai, &binding->set) != VK_SUCCESS) return {};
+    const VkDescriptorImageInfo images[] = {
+        {VK_NULL_HANDLE, impl_->session.tex_in.view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, impl_->keep.view, VK_IMAGE_LAYOUT_GENERAL},
+        {impl_->keep.sampler, binding->view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet writes[3]{};
+    for (uint32_t i = 0; i < 3; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = binding->set; writes[i].dstBinding = i; writes[i].descriptorCount = 1;
+        writes[i].descriptorType = i == 2 ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[i].pImageInfo = &images[i];
+    }
+    vkUpdateDescriptorSets(binding->device, 3, writes, 0, nullptr);
+    return binding;
 }
 
 float Runtime::last_gpu_ms() const { return impl_->gpu_ms; }

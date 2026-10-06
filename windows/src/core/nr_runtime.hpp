@@ -155,6 +155,8 @@ struct RuntimeConfig {
     bool preprocess_unknee = false;
 };
 
+struct LinearInputBinding;
+
 // SDR encoded RGB, source-sized and upright. Accepts RGBA32F and 8-bit RGBA/BGRA
 // UNORM or SRGB. For SRGB images, copy the encoded bits through a private UNORM
 // transfer image; do not apply a transfer function or require mutable game views.
@@ -174,6 +176,9 @@ struct ColourFrame {
     // With VK_IMAGE_USAGE_SAMPLED_BIT the engine path samples the colour and
     // depth in place instead of copying them (same values, no copy).
     VkImageUsageFlags usage = 0;
+    // Optional exact-format linear encode binding from this Runtime. Keep the
+    // binding, source image and runtime alive until all recorded uses complete.
+    const LinearInputBinding* linear_input = nullptr;
 };
 
 // Explicit engine/integration-provided mask. Linear RGBA32F, TRANSFER_SRC,
@@ -314,6 +319,11 @@ public:
     ~Runtime();
     Runtime(const Runtime&) = delete;
     Runtime& operator=(const Runtime&) = delete;
+
+    // Create once per owned source allocation, outside recording. Null means
+    // this configuration uses the existing copy/blit path. Never cache by raw
+    // VkImage handle: an image recreated at the same handle is a new allocation.
+    std::shared_ptr<LinearInputBinding> bind_linear_input(const ColourFrame&);
 
     // Records only: no submit, wait, readback, image resizing or host allocation.
     // Caller supplies a recording command buffer on queue_family, synchronizes
