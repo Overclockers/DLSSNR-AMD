@@ -2025,7 +2025,9 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         NR_PROFILE_MARK(cmd, 7);
         const VkImage out = impl_->scaled ? impl_->full_out.handle : s.surf0.handle;
         const uint32_t extent[] = {frame.width, frame.height, uint32_t(impl_->round_u8)};
-        if (!impl_->post_alpha || mask)
+        // R11G11B10 has no alpha and does not use the 8-bit RGB rounding.
+        // Its alpha pass only reloads/stores RGB before the same output blit.
+        if ((!impl_->post_alpha || mask) && impl_->colour_format != VK_FORMAT_B10G11R11_UFLOAT_PACK32)
             dispatch(cmd, impl_->alpha, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, extent, sizeof extent);
         barrier(cmd, out, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
