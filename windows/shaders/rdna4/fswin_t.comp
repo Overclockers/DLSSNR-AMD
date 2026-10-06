@@ -2204,6 +2204,11 @@ shared NR_F16 ups_projected[NR_C*16];
 #define NR_ACTIVATION_LUT_SHIFT 4
 #endif
 #define NR_ACTIVATION_LUT_SIZE (1u << (16u-NR_ACTIVATION_LUT_SHIFT))
+// Workgroup-local claim broadcast. The exchange bytes are dead until all
+// waves read the claim and pass the second barrier. Avoid adding LDS capacity:
+// a separate claim slot regressed the Windows RDNA4 measurements.
+// Other diagnostic layouts retain the global-slot route.
+#define NR_CLAIM_LDS ((NR_PERSIST_DS || NR_PERSIST_UPS) && NR_HWAVES && NR_PBATCH == 1 && !NR_ACTIVATION_LUT && !NR_LDS_PAD)
 #if NR_HWAVES
 // Two exchange buffers, both [token tile][channel fragment][256 B] - the arena's
 // own tile-blocked layout, so a fragment is one NR_STORE_ACC_COL out and one
@@ -2229,8 +2234,13 @@ shared NrUpsProjU { uint ups_u32[NR_C * 8]; };   // the same bytes (blocks alias
 shared NR_E4M3 lds_x[NR_PBATCH * NR_WIN * NR_C];
 shared NR_E4M3 lds_y[NR_PBATCH * NR_WIN * NR_C];
 #else
+#if NR_CLAIM_LDS
+#extension GL_EXT_shared_memory_block : require
+shared NrClaimExchange { NR_E4M3 lds_x[NR_WIN * NR_C]; NR_E4M3 lds_y[NR_WIN * NR_C]; };
+#else
 shared NR_E4M3 lds_x[NR_WIN * NR_C];
 shared NR_E4M3 lds_y[NR_WIN * NR_C];
+#endif
 #endif
 #endif
 #if NR_ACTIVATION_LUT
@@ -2661,6 +2671,11 @@ NR_FRAG_ACC nr_swin_bias_seed(uint head, uint query, uint key, uint tok0) {
 #define NR_LXB_
 #endif
 #include "nr_prof.glsl"
+#if NR_CLAIM_LDS
+// Blocks alias at offset zero; the final barrier of the previous item keeps
+// its exchange readers ahead of the next claim write.
+shared NrClaimSlot { uint nr_claim_shared; };
+#endif
 void main() {
 #if NR_LDS_PAD > 0
     // Same never-taken shape the coherent-access keep-alive uses - but a store
@@ -2974,21 +2989,32 @@ void main() {
                 } else it |= it << 16u;
             }
 #endif
+#if NR_CLAIM_LDS
+            nr_claim_shared = it;
+#else
             atomicExchange(nr_sync[nr_slot], it);
+#endif
         }
 #else
         if (tid == 0u)
+#if NR_CLAIM_LDS
+            nr_claim_shared = atomicAdd(nr_sync[pcp.sync_off + 0u], 1u);
+#else
             atomicExchange(nr_sync[nr_slot],
                            atomicAdd(nr_sync[pcp.sync_off + 0u], 1u));
 #endif
-        // `barrier()` orders *shared* memory and nothing else, so the slot
-        // write has to be retired before it: without this, another wave's read
-        // of the slot can overtake thread 0's store and the workgroup splits
-        // across two items.
+#endif
+        // Preserve buffer ordering around the queue claim. The shared barrier
+        // publishes the LDS slot; the buffer barrier also protects the legacy
+        // global slot on diagnostic layouts using that route.
         memoryBarrierBuffer();
         barrier();
         uint nr_claim = 0u;
+#if NR_CLAIM_LDS
+        if (subgroupElect()) nr_claim = nr_claim_shared;
+#else
         if (subgroupElect()) nr_claim = atomicAdd(nr_sync[nr_slot], 0u);
+#endif
 #if NR_PBATCH > 1
         const uint nr_pair = subgroupBroadcastFirst(nr_claim);
         barrier();                  // nobody writes the slot again until here
