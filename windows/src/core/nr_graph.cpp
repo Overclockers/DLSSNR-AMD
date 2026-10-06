@@ -5401,8 +5401,9 @@ int main(int argc, char** argv) try {
         samples->erase(samples->begin(),samples->begin()+measured_first);
     }
     const double mhz = nrvk::Telemetry::mean(tel.mhz);
-    std::printf("\n%zu dispatches, one submit: %.3f ms  @ %.0f MHz\n",
-                steps.size(), ms, mhz);
+    std::printf("\n%zu dispatches, one submit: %.3f ms", steps.size(), ms);
+    if (tel.mhz.empty()) std::printf(" (GPU clock telemetry unavailable)\n");
+    else std::printf("  @ %.0f MHz\n", mhz);
     if (!tel.mhz.empty()) {
         double lo=1e30, hi=0; size_t samples=0;
         for (double v:tel.mhz) if (v>=0) {lo=std::min(lo,v);hi=std::max(hi,v);++samples;}

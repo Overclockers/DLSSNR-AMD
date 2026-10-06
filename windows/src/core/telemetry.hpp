@@ -8,7 +8,9 @@
 // clock. Report FLOP/clk, or cycles per WMMA - the clock-independent quantity
 // the hardware ceiling is expressed in - and the numbers become comparable.
 #pragma once
+#ifndef _WIN32
 #include <dirent.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -32,6 +34,7 @@ struct Telemetry {
     }
 
     static std::string find(uint32_t vendor, uint32_t device) {
+#ifndef _WIN32
         for (int card = 0; card < 8; ++card) {
             const std::string base = "/sys/class/drm/card" + std::to_string(card) + "/device/";
             std::ifstream v(base + "vendor"), d(base + "device");
@@ -47,6 +50,10 @@ struct Telemetry {
             closedir(dp);
             if (!found.empty()) return found;
         }
+#else
+        // Windows has no sysfs. Do not report invented GPU clock measurements.
+        (void)vendor; (void)device;
+#endif
         return {};
     }
     static double read(const std::string& path, double scale) {

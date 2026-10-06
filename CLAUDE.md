@@ -2,6 +2,12 @@
 
 Notes for contributors and coding assistants. README.md covers what the project is and how to build it.
 
+For this fork's current goals, experiments and continuation state, read [.ai/README.md](.ai/README.md).
+Its working notes may use Chinese and identify external integration repositories by name and
+commit; machine-specific paths stay in ignored `.ai/local/`. Implementation documentation stays here.
+User-approved optional quality-reducing experiments follow `.ai/decisions.md`; they must be
+independently switchable and off by default. The default path preserves the precision floor below.
+
 ## Layout rules
 
 - `linux/` is the reference implementation. `windows/` is a separate copy for the AMD Windows driver

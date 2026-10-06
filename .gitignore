@@ -3,6 +3,8 @@
 /artifacts/
 # Build output
 /build/
+# Machine-specific AI working notes (shared summaries remain tracked)
+/.ai/local/
 __pycache__/
 /linux/package/*.tar.gz
 /windows/package/*.zip

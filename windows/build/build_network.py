@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 R = Path(__file__).resolve().parents[2]
+GLSLANG = R / 'toolchain/glslang/bin/glslang'
 RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_transfer', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
 MOTION = ['motion_luma', 'motion_estimate']
 
@@ -36,7 +37,7 @@ QUAD = True   # --no-quad: the pair loops as written (A/B)
 def glslang(arch, src, defines, out, unroll=False, network=False):
     if unroll or (network and QUAD):
         pre = out.with_suffix('.pre.comp')
-        r = subprocess.run([str(R / 'toolchain/glslang/bin/glslang'), '-E', '-I' + str(R / 'windows/shaders' / arch / 'include')] + ['-D' + d for d in defines] + [str(src)],
+        r = subprocess.run([str(GLSLANG), '-E', '-I' + str(R / 'windows/shaders' / arch / 'include')] + ['-D' + d for d in defines] + [str(src)],
                            capture_output=True, text=True)
         if r.returncode:
             sys.exit(f'glslang -E failed on {src}:\n{r.stdout}{r.stderr}')
@@ -48,7 +49,7 @@ def glslang(arch, src, defines, out, unroll=False, network=False):
             subprocess.run([sys.executable, str(R / 'windows/build/unroll_glsl.py'), str(pre), str(pre)],
                            check=True, stdout=subprocess.DEVNULL)
         src, defines = pre, []
-    cmd = [str(R / 'toolchain/glslang/bin/glslang'), '-V', '--target-env', 'vulkan1.3',
+    cmd = [str(GLSLANG), '-V', '--target-env', 'vulkan1.3',
            '-I' + str(R / 'windows/shaders' / arch / 'include')]
     cmd += ['-D' + d for d in defines] + [str(src), '-o', str(out)]
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -59,17 +60,19 @@ def glslang(arch, src, defines, out, unroll=False, network=False):
 
 
 def main():
+    global QUAD, GLSLANG
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('arch')
     ap.add_argument('--out', type=Path)
+    ap.add_argument('--glslang', type=Path, default=GLSLANG)
     ap.add_argument('--define', action='append', default=[],
                     help='extra define for every network pipeline (diagnostics, e.g. NR_PROF_OFF=...)')
     ap.add_argument('--check', type=Path)
     ap.add_argument('--no-quad', action='store_true',
                     help='keep the pair quantisation loops (windows/build/quad_quant_glsl.py off)')
     a = ap.parse_args()
-    global QUAD
     QUAD = not a.no_quad
+    GLSLANG = a.glslang
     table = json.loads((R / 'windows/shaders' / a.arch / 'pipelines.json').read_text())
     out = a.out or R / 'build/windows' / a.arch / 'network'
     if out.exists():
