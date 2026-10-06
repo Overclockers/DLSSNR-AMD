@@ -99,6 +99,8 @@ struct HostDevice {
     // game's when the device watch added the network's features). The graph then reads the
     // activation arena through a buffer_reference where that is faster (Windows network only).
     bool buffer_device_address = false;
+    // Enabled on the supplied device; physical support alone is insufficient.
+    bool storage_image_extended_formats = false;
 };
 
 struct RuntimeConfig {

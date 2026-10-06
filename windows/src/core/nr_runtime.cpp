@@ -311,7 +311,7 @@ struct LinearInputBinding {
     VkImage image{};
     VkImageView view{};
     VkDescriptorPool pool{};
-    VkDescriptorSet set{}, transfer_set{};
+    VkDescriptorSet set{}, transfer_set{}, packed_set{};
     std::shared_ptr<int> owner;
     ~LinearInputBinding() {
         if (pool) vkDestroyDescriptorPool(device, pool, nullptr);
@@ -324,7 +324,7 @@ struct Runtime::Impl {
     nrvk::Kernel alpha, mask_pre, mask_resolve;
     // The linear-light path: the proxy is made in place on tex_in and the
     // original kept here for the decode. Only when RuntimeConfig::linear_input.
-    nrvk::Kernel encode, encode_sampled, encode_direct, transfer_pass;
+    nrvk::Kernel encode, encode_sampled, encode_direct, transfer_pass, transfer_packed;
     std::shared_ptr<int> input_binding_owner = std::make_shared<int>(0);
     nrvk::Context::Image keep{};
     bool linear{};
@@ -661,6 +661,7 @@ struct Runtime::Impl {
         if (encode_sampled.device) encode_sampled.destroy();
         if (encode_direct.device) encode_direct.destroy();
         if (transfer_pass.device) transfer_pass.destroy();
+        if (transfer_packed.device) transfer_packed.destroy();
         if (prep_k.device) prep_k.destroy();
         if (prep_back_k.device) prep_back_k.destroy();
         if (transfer_prep.device) transfer_prep.destroy();
@@ -1041,6 +1042,13 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
                                      : impl_->linear ? &impl_->keep : shown;
         impl_->transfer_pass.create(s.ctx, (adapters / "runtime_transfer.spv").string(), {}, 36,
                                {&s.surf0, shown, keep, answer});
+        VkFormatProperties packed{};
+        vkGetPhysicalDeviceFormatProperties(host.physical, config.colour_format, &packed);
+        if (impl_->encode_direct.device && host.storage_image_extended_formats &&
+            config.colour_format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
+            (packed.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
+            impl_->transfer_packed.create(s.ctx, (adapters / "runtime_transfer_packed.spv").string(), {}, 36,
+                                          {&s.surf0, shown, keep, answer});
     }
     if (config.preprocess && !mask_config.width) {
         impl_->prep = true;
@@ -1472,11 +1480,16 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         input_binding->owner == impl_->input_binding_owner && input_binding->image == frame.image &&
         (frame.usage & VK_IMAGE_USAGE_SAMPLED_BIT);
     const bool direct_original = sampled_encode && impl_->encode_direct.device && input_binding->transfer_set;
+    // Each invocation reads and replaces only its own texel. This route has
+    // matching model/frame extents and no other original-color reader after it.
+    const bool direct_packed = c.apply_model && direct_original && input_binding->packed_set &&
+        (frame.usage & VK_IMAGE_USAGE_STORAGE_BIT);
     const bool sampled_colour = ds || sampled_encode;
     barrier(cmd, frame.image, frame.before, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             frame.before_stage, frame.before_access,
             sampled_colour ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
-            sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT);
+            sampled_colour ? VK_ACCESS_SHADER_READ_BIT | (direct_packed ? VK_ACCESS_SHADER_WRITE_BIT : 0)
+                           : VK_ACCESS_TRANSFER_READ_BIT);
     if (!ds)
     barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             sampled_encode ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -2023,59 +2036,65 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 push{frame.width, frame.height, nw, nh, impl_->linear ? 0u : 1u,
                      c.detail_strength, c.colour_strength, c.max_ratio, impl_->white_point};
             const nrvk::Kernel& transfer =
+                direct_packed ? impl_->transfer_packed :
                 prep_on && impl_->transfer_prep.device ? impl_->transfer_prep : impl_->transfer_pass;
             dispatch(cmd, transfer, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, &push, sizeof push,
+                     direct_packed ? input_binding->packed_set :
                      direct_original ? input_binding->transfer_set : VK_NULL_HANDLE);
             compute_barrier(cmd);
         }
         NR_PROFILE_MARK(cmd, 7);
-        const VkImage out = impl_->scaled ? impl_->full_out.handle : s.surf0.handle;
-        const uint32_t extent[] = {frame.width, frame.height, uint32_t(impl_->round_u8)};
-        // R11G11B10 has no alpha and does not use the 8-bit RGB rounding.
-        // Its alpha pass only reloads/stores RGB before the same output blit.
-        if ((!impl_->post_alpha || mask) && impl_->colour_format != VK_FORMAT_B10G11R11_UFLOAT_PACK32)
-            dispatch(cmd, impl_->alpha, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, extent, sizeof extent);
-        barrier(cmd, out, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-        barrier(cmd, frame.image, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                sampled_colour ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
-                sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-        if (impl_->direct_out) {
-            // Already the frame's bits (an *_SRGB frame takes its UNORM twin's).
-            vkCmdCopyImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        } else if(encoded.handle) {
-            barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
-            vkCmdBlitImage(cmd,out,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_NEAREST);
-            barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
-            vkCmdCopyImage(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           frame.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&region);
-            barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_GENERAL,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT);
-        } else if (impl_->transfer == Transfer::DirectBlit) {
-            vkCmdBlitImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
-        } else {
-            vkCmdCopyImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        if (!direct_packed) {
+            const VkImage out = impl_->scaled ? impl_->full_out.handle : s.surf0.handle;
+            const uint32_t extent[] = {frame.width, frame.height, uint32_t(impl_->round_u8)};
+            // R11G11B10 has no alpha and does not use the 8-bit RGB rounding.
+            // Its alpha pass only reloads/stores RGB before the same output blit.
+            if ((!impl_->post_alpha || mask) && impl_->colour_format != VK_FORMAT_B10G11R11_UFLOAT_PACK32)
+                dispatch(cmd, impl_->alpha, (frame.width + 7) / 8, (frame.height + 7) / 8, 1, extent, sizeof extent);
+            barrier(cmd, out, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+            barrier(cmd, frame.image, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    sampled_colour ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+            if (impl_->direct_out) {
+                // Already the frame's bits (an *_SRGB frame takes its UNORM twin's).
+                vkCmdCopyImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            } else if(encoded.handle) {
+                barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
+                vkCmdBlitImage(cmd,out,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_NEAREST);
+                barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
+                vkCmdCopyImage(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               frame.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&region);
+                barrier(cmd,encoded.handle,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_GENERAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT);
+            } else if (impl_->transfer == Transfer::DirectBlit) {
+                vkCmdBlitImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+            } else {
+                vkCmdCopyImage(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               frame.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            }
+            barrier(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
-        barrier(cmd, out, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         info.applied = true;
     }
-    barrier(cmd, frame.image, c.apply_model ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    barrier(cmd, frame.image, direct_packed ? VK_IMAGE_LAYOUT_GENERAL : c.apply_model ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
                               : sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            frame.after, c.apply_model || !sampled_colour ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            frame.after, direct_packed ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT :
+            c.apply_model || !sampled_colour ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            direct_packed ? VK_ACCESS_SHADER_WRITE_BIT :
             c.apply_model ? VK_ACCESS_TRANSFER_WRITE_BIT : sampled_colour ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
             frame.after_stage, frame.after_access);
     if (ds && engine->depth.image)
@@ -2111,11 +2130,12 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     if (vkCreateImageView(binding->device, &vi, nullptr, &binding->view) != VK_SUCCESS) return {};
     const bool direct_original = impl_->encode_direct.device != VK_NULL_HANDLE;
+    const bool direct_packed = direct_original && impl_->transfer_packed.device && (frame.usage & VK_IMAGE_USAGE_STORAGE_BIT);
     const VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, direct_original ? 4u : 2u},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, direct_original ? 3u : 1u}};
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, direct_packed ? 6u : direct_original ? 4u : 2u},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, direct_packed ? 5u : direct_original ? 3u : 1u}};
     VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pi.maxSets = direct_original ? 2u : 1u; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
+    pi.maxSets = direct_packed ? 3u : direct_original ? 2u : 1u; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
     if (vkCreateDescriptorPool(binding->device, &pi, nullptr, &binding->pool) != VK_SUCCESS) return {};
     VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     ai.descriptorPool = binding->pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &impl_->encode_sampled.dsl;
@@ -2140,6 +2160,13 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
         binding->transfer_set = kernel_set(binding->device, binding->pool, impl_->transfer_pass, {},
                                           {&session.surf0, &session.tex_in, &original, &session.surf0});
         if (!binding->transfer_set) return {};
+        if (direct_packed) {
+            // Separate sampled/storage descriptors alias one texel per invocation.
+            auto output = original; output.sampler = VK_NULL_HANDLE;
+            binding->packed_set = kernel_set(binding->device, binding->pool, impl_->transfer_packed, {},
+                                            {&session.surf0, &session.tex_in, &original, &output});
+            if (!binding->packed_set) return {};
+        }
     }
     return binding;
 }

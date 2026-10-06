@@ -15,7 +15,11 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(set = 0, binding = 0, rgba32f) uniform image2D result;       // the model's answer, model-sized
 layout(set = 0, binding = 1) uniform sampler2D shown;               // what the first pass was shown, model-sized
 layout(set = 0, binding = 2) uniform sampler2D keep;                // the frame, frame-sized
+#if NR_TRANSFER_PACKED
+layout(set = 0, binding = 3, r11f_g11f_b10f) uniform image2D result_full;
+#else
 layout(set = 0, binding = 3, rgba32f) uniform image2D result_full;  // the answer, frame-sized
+#endif
 layout(push_constant) uniform Push {
     uint width, height;       // the frame
     uint model_w, model_h;    // `result` and `shown`

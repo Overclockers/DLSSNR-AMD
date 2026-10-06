@@ -120,3 +120,21 @@ runtime build; the previous encode variants remain available for fallback.
 
 Compare separately saved full outputs as well. Passing an encode probe or a
 host fixture alone does not establish real-game performance or image quality.
+
+`check_packed_output` compares nearest-blit conversion with R11G11B10 storage
+writes over finite format boundaries, then checks the actual composition with
+four white points and five control settings. R11G11B10 composition reads and
+writes the same texel, matching the runtime's alias; RGBA16F inputs use separate
+packed output for arithmetic coverage. The runtime enables this route only for
+eligible linear R11G11B10 frames when the host enabled
+`shaderStorageImageExtendedFormats`, the format supports storage, and the image
+has storage usage. Other routes keep the existing output conversion.
+
+```powershell
+& "$study/check_packed_output.exe" "$study/dlssnr-amd/shaders/runtime" "$study/check_packed_output.spv"
+```
+
+The probe requests the optional device feature only in its own test context.
+Its conversion shader is an offline test artifact; `runtime_transfer_packed.spv`
+is the additional runtime module. The probe does not establish NaN/Inf payload
+equivalence or results on other GPUs/drivers.

@@ -27,7 +27,7 @@ from pathlib import Path
 
 R = Path(__file__).resolve().parents[2]
 GLSLANG = R / 'toolchain/glslang/bin/glslang'
-RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_encode_sampled', 'runtime_encode_direct', 'runtime_transfer', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
+RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_encode_sampled', 'runtime_encode_direct', 'runtime_transfer', 'runtime_transfer_packed', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
 MOTION = ['motion_luma', 'motion_estimate']
 
 
@@ -100,6 +100,9 @@ def main():
         defines = ['NR_ENCODE_SAMPLED=1'] if sampled_encode else []
         if k == 'runtime_encode_direct':
             defines.append('NR_ENCODE_DIRECT=1')
+        if k == 'runtime_transfer_packed':
+            source = 'runtime_transfer'
+            defines.append('NR_TRANSFER_PACKED=1')
         glslang(a.arch, R / 'windows/shaders/passes' / f'{source}.comp', defines, out / 'runtime' / f'{k}.spv')
     print(f'{out}: {len(pipelines)} network pipelines, {len(table["variants"]) + len(MOTION)} temporal, '
           f'{len(RUNTIME)} runtime')
