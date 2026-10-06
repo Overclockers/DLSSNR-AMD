@@ -28,6 +28,27 @@ games and other GPU workloads. Repeat measurements; record compiler/driver and
 shader identity. Native Windows sysfs clock telemetry is unavailable: do not
 interpret the absence of clock readings as a measured clock of zero.
 
+For driver register/LDS statistics, build into a separate directory with
+`--pipeline-stats`. This enables the existing `NR_PIPELINE_STATS` diagnostic.
+When supported by the driver, setting `NR_DUMP_IR` to an existing directory also
+captures its internal representations. Use the ordinary build for final timing.
+
+## Small ViT contraction
+
+The Windows recipe includes `gemmprojws`, an eight-wave variant of `gemmprojw`
+with the same 64x128 output tile, packed weights and ascending K reductions.
+The production host selects it for ViT contractions with 768..1024 tokens;
+larger contractions retain the original variant. The shader manifest and host
+must agree on `projws_max_tokens`; rebuild both together.
+
+Use the same current executable and complete shader directory on both sides of
+an A/B run. Add `--no-projws` for the baseline and omit it for the candidate.
+This diagnostic restores the original dispatch choice without changing precision.
+At 2258x1270, six interleaved pairs without per-layer instrumentation measured
+10.695 ms versus 10.504 ms on RX 9070 XT / Windows driver 32.0.31041.1004.
+See [EXP-002](../../.ai/experiments/EXP-002-windows-small-vit-gemm.md) for inputs,
+rejected alternatives, complete-output checks and the limits of that result.
+
 ## Host C256 edge profile
 
 Some Mochizuki host recipes disable edge-specialized bodies to reduce first-build

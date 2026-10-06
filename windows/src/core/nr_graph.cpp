@@ -179,6 +179,12 @@ static std::vector<uint8_t> g_chain_nobar;
 #ifndef NR_PROJW_MIN_TOKENS
 #define NR_PROJW_MIN_TOKENS 2048
 #endif
+// Windows: eight 32x32 wave tiles fill the small ViT contraction better than
+// two 64x64 tiles. The workgroup still covers 64x128 outputs. Keep the original
+// pipeline for larger token counts, where its greater operand reuse wins.
+#ifndef NR_PROJWS_MAX_TOKENS
+#define NR_PROJWS_MAX_TOKENS 0
+#endif
 // The decoder input's 1024->512 GEMM (640 tokens at 1080p) on the wide
 // tile is 20 workgroups - 80 waves for 128 SIMDs. `gemmvqkvs` is the same
 // no-residual FP16-output product on the projection tile (NR_GEMM_PROJ_MT/NT),
@@ -1493,6 +1499,7 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
             {"gemm_proj_nt", uint32_t(NR_GEMM_PROJ_NT)},
             {"gemm_projw_mt", uint32_t(NR_GEMM_PROJW_MT)},
             {"gemm_projw_nt", uint32_t(NR_GEMM_PROJW_NT)},
+            {"projws_max_tokens", uint32_t(NR_PROJWS_MAX_TOKENS)},
             {"ffwd_wgw", uint32_t(NR_FFWD_WGW)},
             {"ffwd_gmajor", uint32_t(NR_FFWD_GMAJOR)},
             {"gemm_remap", uint32_t(NR_GEMM_REMAP_HOST)},
@@ -1560,7 +1567,8 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
             auto it = built.find(name);
             if (it == built.end()) {
                 std::fprintf(stderr, "%s does not record %s; run "
-                             "windows/build/build_network.py\n", path.c_str(), name);
+                             "windows/build/build_network.py and rebuild the host, "
+                             "or install the complete matching package.\n", path.c_str(), name);
                 return 1;
             }
             if (it->second != mine) {
@@ -2917,6 +2925,12 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
             }
             d.kern = std::string("gemm") + (wide ? "v" : "") +
                      (sh.act ? "act" : (resid ? "proj" : "nores")) + (projw ? "w" : "");
+            // RX 9070 XT / Windows: 800 and 960 tokens take ~0.37 ms over eight
+            // contractions instead of ~0.64 ms. At 2160 tokens this variant
+            // regresses, so retain gemmprojw above the small-grid limit.
+            if (projw && mt == 64u && nt == 128u && M <= size_t(NR_PROJWS_MAX_TOKENS) &&
+                !flag(argc, argv, "--no-projws"))
+                d.kern = "gemmprojws";
             // The C=512 projections have their own pipeline: at 1080p their grid
             // is 8.5 waves a SIMD, and the ones given the 9th also start late, so
             // gemmprojc caps residency at 8 (an LDS pad) and runs W.X^T
@@ -3044,7 +3058,7 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
                 pack_matrix(p.q2_off,FF_GROUPS*FF_OUT,FF_J);
                 continue;
             }
-            if(pd.kern=="gemmproj" || pd.kern=="gemmprojc" || pd.kern=="gemmprojt" || pd.kern=="gemmprojw" || pd.kern=="gemmvact" || pd.kern=="gemmvqkv" || pd.kern=="gemmvqkvs" || pd.kern=="gemmvqkvnorm") {
+            if(pd.kern=="gemmproj" || pd.kern=="gemmprojc" || pd.kern=="gemmprojt" || pd.kern=="gemmprojw" || pd.kern=="gemmprojws" || pd.kern=="gemmvact" || pd.kern=="gemmvqkv" || pd.kern=="gemmvqkvs" || pd.kern=="gemmvqkvnorm") {
                 PushGemm p{};
                 if(pd.push.size()!=sizeof p) throw std::runtime_error("packed GEMM push mismatch");
                 std::memcpy(&p,pd.push.data(),sizeof p);
