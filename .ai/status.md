@@ -4,13 +4,15 @@
 
 ## 当前工作
 
-运行 `20261006-235052-9070xt`，最多 10 次无损离线实验，已完成前 2 次。
+运行 `20261006-235052-9070xt`，最多 10 次无损离线实验，已完成前 3 次。
 
 - [EXP-008](experiments/EXP-008-windows-attention-empty-query.md)：无可靠收益，未保留；主仓 `ac79066`。
 - [EXP-009](experiments/EXP-009-windows-packed-output-alpha.md)：省去 R11G11B10 无效 alpha 回写，
   完整 NR GPU 平均 **11.045790→10.931800 ms，节省 0.113991 ms / 1.032%**；三组方向一致。
   15 份序列及五对额外图像字节一致，ABI/GPU/normal 切换与无诊断/C++17 构建通过。
-  宿主 `dfd564e`；主仓由本实验提交保存。未进入游戏、打包、部署或推送。
+  宿主 `dfd564e`；主仓 `f4390c6`。未进入游戏、打包、部署或推送。
+- [EXP-010](experiments/EXP-010-windows-attention-bias-layout.md)：两种 bias 布局无可靠收益，56 份照片一致；未保留。
+
 后续基线包含 EXP-009；本次新驱动/源与产物已核验，继续从实际算子证据筛选候选。
 
 ## 此前保留成果
