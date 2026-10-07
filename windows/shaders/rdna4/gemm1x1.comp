@@ -14,6 +14,20 @@
 #define NR_WAVE_OF(t) ((t) / 32u)
 #endif
 #include "coopmm.glsl"
+// gemmprojws is selected only for CCVit1DFfnContract (K=4096, N=1024).
+// Exposing these graph invariants reduces LLPC address/loop instructions;
+// M remains dynamic and every MMA and rounding operation keeps its order.
+#ifndef NR_FIXED_KN
+#define NR_FIXED_KN 0
+#endif
+#if NR_FIXED_KN
+#define nr_fixed_K 4096u
+#define nr_fixed_N 1024u
+#else
+#define nr_fixed_K pc.K
+#define nr_fixed_N pc.N
+#endif
+
 
 // The first real kernel of the port: the pointwise projection that
 // `CCSplitSwin16HFfwdProj`, `CCSplitSwin16HProj`, `CCSplitSwin16HProjPool`,
@@ -551,7 +565,7 @@ shared float lds_e[NR_WAVES * 256];
         outv[i] = vv; \
     }
 #ifdef NR_DEBUG_F32
-#define NR_EPI_DEBUG(i) act_f32[pc.d_off + tok * pc.N + ch] = raw;
+#define NR_EPI_DEBUG(i) act_f32[pc.d_off + tok * nr_fixed_N + ch] = raw;
 #else
 #define NR_EPI_DEBUG(i)
 #endif
@@ -594,7 +608,7 @@ shared float lds_e[NR_WAVES * 256];
 // `buffer_store_b8` for an SSBO, so this is about *addresses*, not width:
 // tile-blocked, a lane's eight bytes and the whole 16x16 tile's 256 bytes are
 // contiguous, where the linear form scattered 32 lanes over 16 rows a
-// pc.N stride apart.
+// nr_fixed_N stride apart.
 #define NR_EPI_STORE(i)
 
 void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
@@ -605,7 +619,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
     // Eight contiguous channels, gathered and scattered four at a time. Every
     // index below is a multiple of four elements: ch0 is a multiple of 16,
     // col0 is 0 or 8, and the host aligns every arena offset to 16 bytes.
-    const uint q = (tok * pc.N + ch0 + col0) / 4u;
+    const uint q = (tok * nr_fixed_N + ch0 + col0) / 4u;
 #ifdef NR_NO_RESIDUAL
     const f16vec4 rv[2] = f16vec4[2](f16vec4(0.0), f16vec4(0.0));
     const f16vec4 gw[2] = f16vec4[2](f16vec4(0.0), f16vec4(0.0));
@@ -620,7 +634,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
     //
     // Reading it from the tile-blocked e4m3 arena is also what makes a chain
     // possible without a second arena and a second store per layer.
-    const uint rb = (pc.r_off + ((tok0 / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u
+    const uint rb = (pc.r_off + ((tok0 / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u
                      + row * 16u + col0) / 4u;
     const fe4m3vec4 r0 = act_e4m3x4[rb], r1 = act_e4m3x4[rb + 1u];
     const f16vec4 rv[2] = f16vec4[2](
@@ -686,7 +700,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
         const bool oob = spx >= pc.raster || spy >= pc.rows;
         if (!oob) {
             const uint obr = (pc.o_off
-                              + ((tokr / 16u) * (pc.N / 16u) + sg) * 256u
+                              + ((tokr / 16u) * (nr_fixed_N / 16u) + sg) * 256u
                               + (tokr % 16u) * 16u + col0) / 4u;
             act_e4m3x4[obr]      = nr_quant4_h(f16vec4(outv[0], outv[1], outv[2], outv[3]));
             act_e4m3x4[obr + 1u] = nr_quant4_h(f16vec4(outv[4], outv[5], outv[6], outv[7]));
@@ -707,7 +721,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
     const uint pixel = linear % (pc.crow * pc.rows);
     sdx = pixel % pc.crow; sdy = pixel / pc.crow;
     s_oob = (pc.ds_raster != 2u && (spy >= writer_rows || spx >= pc.raster)) ||
-        sdx >= pc.otx * 4u || dst_group >= pc.N / 16u;
+        sdx >= pc.otx * 4u || dst_group >= nr_fixed_N / 16u;
     // C32's native DS epilogue clears the padded output rectangle using the
     // consumer's padded plane stride, after storing with the unpadded stride.
     // A value crossing channel planes can otherwise occupy this padding and
@@ -727,14 +741,14 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
     if (pc.clear_x != 0u && (sdx >= pc.clear_x || sdy >= pc.clear_y))
         for (int v = 0; v < 8; ++v) outv[v] = NR_F16(0.0);
     const uint ob = (pc.o_off
-                     + (((sdy / 4u) * pc.otx + sdx / 4u) * (pc.N / 16u) + dst_group) * 256u
+                     + (((sdy / 4u) * pc.otx + sdx / 4u) * (nr_fixed_N / 16u) + dst_group) * 256u
                      + (4u * (sdy % 4u) + sdx % 4u) * 16u + col0) / 4u;
 #elif defined(NR_OUT_TILED)
     // The whole 16x16 tile is 256 contiguous bytes, so a lane's eight are too.
-    const uint ob = (pc.o_off + ((tok0 / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u
+    const uint ob = (pc.o_off + ((tok0 / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u
                      + row * 16u + col0) / 4u;
 #else
-    const uint ob = (pc.o_off + tok * pc.N + ch0 + col0) / 4u;
+    const uint ob = (pc.o_off + tok * nr_fixed_N + ch0 + col0) / 4u;
 #endif
 #define NR_QO(v) nr_quant_e4m3(outv[v])
 #if defined(NR_DS_SHEAR)
@@ -748,7 +762,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
 #undef NR_QO
 #else
 #ifdef NR_OUT_TILED
-    const uint hq = (pc.o_off + ((tok0 / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u
+    const uint hq = (pc.o_off + ((tok0 / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u
                      + row * 16u + col0) / 4u;
 #else
     const uint hq = pc.o_off/4u + q;
@@ -791,7 +805,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
             const NR_F16 c = NR_F16(lds_e[b + (row + 4u) * 16u] + lds_e[b + (row + 5u) * 16u]);
             pv[i] = NR_F16(NR_F16(a + c) * NR_F16(0.25));
         }
-        const uint pq = (pc.p_off + ((otok / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u
+        const uint pq = (pc.p_off + ((otok / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u
                          + (otok % 16u) * 16u + col0) / 4u;
 #define NR_QP(v) nr_quant_e4m3(pv[v])
         act_e4m3x4[pq]      = nr_quant4_h(f16vec4(pv[0], pv[1], pv[2], pv[3]));
@@ -823,7 +837,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
 // `lds_e` and the residency it costs.
 // The untiled output is reachable too, and only for f16: `gemmvqkv` writes the
 // plain `[token][3C]` block `vit_qkv_norm.comp` reads, so the fragment store is
-// the same RowMajor store at stride `pc.N` instead of 16. It is **not** free the
+// the same RowMajor store at stride `nr_fixed_N` instead of 16. It is **not** free the
 // way the tiled one is - a lane's eight components are eight rows, so this is
 // eight `buffer_store_b16` where the per-element epilogue wrote two `b64` - but
 // each of those eight is still two contiguous 32-byte runs across the wave, and
@@ -863,7 +877,7 @@ void nr_finish_tile(uint tok0, uint ch0, uint wave, uint lane) {   // NOLINT
 void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
     if (tok0 >= pc.M) return;
     const uint tk = lane % 16u, c8 = 8u * (lane / 16u);
-    const uint tile = ((tok0 / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u;
+    const uint tile = ((tok0 / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u;
 #ifndef NR_NO_RESIDUAL
     const uint gq = (pc.g_off + ch0 + c8) / 4u;
     const f16vec4 g0 = wgt_f16x4[gq], g1 = wgt_f16x4[gq + 1u];
@@ -894,7 +908,7 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
     const uint y = t / pc.W, x = t % pc.W;
     const uint d = ((y / 4u) * (pc.W / 4u) + x / 4u) * 16u + (y % 4u) * 4u + x % 4u;
     if (y < pc.rows) {
-        const uint oq = (pc.o_off + ((d / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + c8) / 4u;
+        const uint oq = (pc.o_off + ((d / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + c8) / 4u;
         act_e4m3x4[oq] = q0; act_e4m3x4[oq + 1u] = q1;
     }
 #else
@@ -905,7 +919,7 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
     const uint y = (tt / (pc.W / 4u)) * 4u + (t % 16u) / 4u, x = (tt % (pc.W / 4u)) * 4u + t % 4u;
     const uint d = y * pc.W + x;
     if (y < pc.rows) {
-        const uint pq = (pc.p_off + ((d / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + c8) / 4u;
+        const uint pq = (pc.p_off + ((d / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + c8) / 4u;
         act_e4m3x4[pq] = q0; act_e4m3x4[pq + 1u] = q1;
     }
 #endif
@@ -915,7 +929,7 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
 void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
     if (tok0 >= pc.M) return;
     uint col = lane % 16u, row0 = 8u * (lane / 16u);
-    uint tile = ((tok0 / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u;
+    uint tile = ((tok0 / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u;
 #ifndef NR_NO_RESIDUAL
     NR_F16 g = wgt_f16[pc.g_off + ch0 + col];
 #endif
@@ -997,12 +1011,12 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
 #if NR_OUT_PERM == 1
         const uint y = t / pc.W, x = t % pc.W;
         const uint d = ((y / 4u) * (pc.W / 4u) + x / 4u) * 16u + (y % 4u) * 4u;
-        const uint base = pc.o_off + ((d / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + col;
+        const uint base = pc.o_off + ((d / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + col;
 #else
         const uint tt = t / 16u;
         const uint y = (tt / (pc.W / 4u)) * 4u + (t % 16u) / 4u, x = (tt % (pc.W / 4u)) * 4u;
         const uint d = y * pc.W + x;
-        const uint base = pc.p_off + ((d / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + col;
+        const uint base = pc.p_off + ((d / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u + (d % 16u) * 16u + col;
 #endif
         if (y < pc.rows)
             for (uint c = 0u; c < 4u; ++c) act_e4m3[base + 16u * c] = qv[4u * g + c];
@@ -1022,7 +1036,7 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
         const NR_F16 pa = NR_F16(float(pvv[c0]) + float(pvv[c0 + 1u]));
         const NR_F16 pc2 = NR_F16(float(pvv[c0 + 4u]) + float(pvv[c0 + 5u]));
         const NR_F16 pv = NR_F16(NR_F16(pa + pc2) * NR_F16(0.25));
-        act_e4m3[pc.p_off + ((otok / 16u) * (pc.N / 16u) + ch0 / 16u) * 256u + (otok % 16u) * 16u + col] =
+        act_e4m3[pc.p_off + ((otok / 16u) * (nr_fixed_N / 16u) + ch0 / 16u) * 256u + (otok % 16u) * 16u + col] =
             nr_quant_e4m3(pv);
     }
 #endif
@@ -1032,7 +1046,7 @@ void nr_finish_fragment(NR_FRAG_ACC a, uint tok0, uint ch0, uint lane) {
 #elif defined(NR_OUT_TILED)
     NR_STORE_ACC(result, act_f16, pc.o_off + tile, 16u);
 #else
-    NR_STORE_ACC(result, act_f16, pc.o_off + tok0 * pc.N + ch0, pc.N);
+    NR_STORE_ACC(result, act_f16, pc.o_off + tok0 * nr_fixed_N + ch0, nr_fixed_N);
 #endif
 }
 #endif
@@ -1117,7 +1131,7 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
         out0[c]=qx.x; out0[c+1]=qx.y;
         out1[c]=qy.x; out1[c+1]=qy.y;
     }
-    uint tile=((tok0/16u)*(pc.N/16u)+ch0/16u)*256u;
+    uint tile=((tok0/16u)*(nr_fixed_N/16u)+ch0/16u)*256u;
     NR_STORE_ACC(out0,act_e4m3,pc.o_off+tile,16u);
     NR_STORE_ACC(out1,act_e4m3,pc.o_off+tile+256u,16u);
 }
@@ -1133,32 +1147,32 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
 // address arithmetic - same instruction count, same bytes.
 //
 // Why it should matter: with the canonical [N][K] layout the fragment stride is
-// pc.K = 512 B, so a fragment is sixteen 16-byte row segments 512 B apart and a
+// nr_fixed_K = 512 B, so a fragment is sixteen 16-byte row segments 512 B apart and a
 // single buffer_load_b64 touches **sixteen 128-byte cache lines to use 16 bytes
 // of each**. Tile-blocked, it touches two lines and uses all of both.
 #ifdef NR_TILED_A
 #define NR_ABASE_I(i) abase_g[i] = pc.x_off + \
-        ((mg0 + mloc + uint((i) * 16)) / 16u) * (pc.K / 16u) * 256u;
+        ((mg0 + mloc + uint((i) * 16)) / 16u) * (nr_fixed_K / 16u) * 256u;
 #define NR_ASTRIDE 16u
 #define NR_AKOFF(k) (((k) / 16u) * 256u)
 #else
-#define NR_ABASE_I(i) abase_g[i] = pc.x_off + (mg0 + mloc + uint((i) * 16)) * pc.K;
-#define NR_ASTRIDE pc.K
+#define NR_ABASE_I(i) abase_g[i] = pc.x_off + (mg0 + mloc + uint((i) * 16)) * nr_fixed_K;
+#define NR_ASTRIDE nr_fixed_K
 #define NR_AKOFF(k) (k)
 #endif
 #ifdef NR_PACKED_WEIGHT_N2
 #define NR_BBASE_J(j) bbase_g[j] = pc.w_off/4u + \
-        ((ng0+nloc+uint((j)*16))/32u)*(pc.K/16u)*128u + lane*4u;
+        ((ng0+nloc+uint((j)*16))/32u)*(nr_fixed_K/16u)*128u + lane*4u;
 #define NR_BSTRIDE 16u
 #define NR_BKOFF(k) (((k)/16u)*128u)
 #elif defined(NR_TILED_B)
 #define NR_BBASE_J(j) bbase_g[j] = pc.w_off + \
-        ((ng0 + nloc + uint((j) * 16)) / 16u) * (pc.K / 16u) * 256u;
+        ((ng0 + nloc + uint((j) * 16)) / 16u) * (nr_fixed_K / 16u) * 256u;
 #define NR_BSTRIDE 16u
 #define NR_BKOFF(k) (((k) / 16u) * 256u)
 #else
-#define NR_BBASE_J(j) bbase_g[j] = pc.w_off + (ng0 + nloc + uint((j) * 16)) * pc.K;
-#define NR_BSTRIDE pc.K
+#define NR_BBASE_J(j) bbase_g[j] = pc.w_off + (ng0 + nloc + uint((j) * 16)) * nr_fixed_K;
+#define NR_BSTRIDE nr_fixed_K
 #define NR_BKOFF(k) (k)
 #endif
 #ifndef NR_KOFF_SPLIT
@@ -1187,7 +1201,7 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
 #ifdef NR_A_DIRECT
 // Per-fragment base addresses are hoisted into registers before the loop. Left
 // as an expression, ACO recomputed them every iteration - seven v_mul_lo_u32
-// and forty-odd adds per sixteen WMMAs - because pc.K is a push constant and it
+// and forty-odd adds per sixteen WMMAs - because nr_fixed_K is a push constant and it
 // would not strength-reduce the row offset.
 #if NR_KOFF_SPLIT && defined(NR_TILED_A) && !defined(NR_OPERAND_F16)
 // The same A fragment coopMatLoad(RowMajor, stride 16) produces - lane l
@@ -1414,11 +1428,11 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
         const uint ch0  = ng0 + nloc + uint(j) * 16u; \
         NR_FRAG_A16 rf; \
         NR_FRAG_B16 gf; \
-        NR_LOAD_A(rf, act_f16, pc.r_off + tok0 * pc.N + ch0, pc.N); \
+        NR_LOAD_A(rf, act_f16, pc.r_off + tok0 * nr_fixed_N + ch0, nr_fixed_N); \
         NR_LOAD_B(gf, wgt_f16, pc.gd_off + (ch0 / 16u) * 256u, 16u); \
         NR_MMA(acc[ii][j], rf, gf); \
         NR_STORE_ACC(NR_NARROW_ACC(acc[ii][j]), act_f16, \
-                     pc.o_off + tok0 * pc.N + ch0, pc.N); \
+                     pc.o_off + tok0 * nr_fixed_N + ch0, nr_fixed_N); \
     }
 #else
 #define NR_EPI_J(j)   { \
@@ -1448,14 +1462,14 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
 #define NR_FA_S(s)  { \
         const uint soff = uint(s) * uint(NR_VECA); \
         const uint sb = tid * uint(NR_VECA) + uint(s) * uint(NR_THREADS * NR_VECA); \
-        const uint src = pc.x_off + (mg0 + sb / uint(NR_KCHUNK)) * pc.K \
+        const uint src = pc.x_off + (mg0 + sb / uint(NR_KCHUNK)) * nr_fixed_K \
                        + kfetch + sb % uint(NR_KCHUNK); \
         NR_FOR_V(NR_VECA, NR_FA_V) \
     }
 #define NR_FB_S(s)  { \
         const uint soff = uint(s) * uint(NR_VECB); \
         const uint sb = tid * uint(NR_VECB) + uint(s) * uint(NR_THREADS * NR_VECB); \
-        const uint src = pc.w_off + (ng0 + sb / uint(NR_KCHUNK)) * pc.K \
+        const uint src = pc.w_off + (ng0 + sb / uint(NR_KCHUNK)) * nr_fixed_K \
                        + kfetch + sb % uint(NR_KCHUNK); \
         NR_FOR_T(NR_VECB, NR_FB_V) \
     }
@@ -1486,6 +1500,9 @@ void nr_finish_qkv_pair(NR_FRAG_ACC a, NR_FRAG_ACC b, uint tok0, uint ch0, uint 
 #endif
 
 void main() {
+#if NR_FIXED_KN
+    if (pc.K != 4096u || pc.N != 1024u) return;
+#endif
     NR_PROF_BEGIN()
     nr_chain_wait()
 #if NR_COHERENT_ACT
@@ -1523,7 +1540,7 @@ void main() {
     const uint mg0 = gl_WorkGroupID.x * uint(NR_MTILE);
     const uint ng0 = gl_WorkGroupID.y * uint(NR_NTILE);
 #endif
-    const uint nchunk = pc.K / uint(NR_KCHUNK);
+    const uint nchunk = nr_fixed_K / uint(NR_KCHUNK);
 
 #if defined(NR_A_DIRECT) || defined(NR_B_DIRECT)
     uint abase_g[NR_MFRAG];
@@ -1616,7 +1633,7 @@ void main() {
 #else
     NR_FOR_I(NR_MFRAG, NR_EPI_I)
 #endif
-    NR_OCC_USE(pc.K == 0u, act_f32[0] = 0.0)
+    NR_OCC_USE(nr_fixed_K == 0u, act_f32[0] = 0.0)
     nr_chain_signal()
     NR_PROF_END(pc.o_off)
 }

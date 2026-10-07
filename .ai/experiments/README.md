@@ -65,6 +65,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-053](EXP-053-windows-vit-token-chunk-locality.md) | ViT token 分块的生产消费局部性 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-054](EXP-054-windows-vit-contract-transposed-mma.md) | ViT 收缩的转置矩阵与输出布局 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-055](EXP-055-windows-vit-cross-chunk-prefetch.md) | ViT 扩张的跨 K-chunk 预取 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-056](EXP-056-windows-vit-contract-fixed-dimensions.md) | ViT 收缩固定 K/N | 保留；确认节省 0.037738 ms | 126 对目标历史、边界/回退、两仓构建精确通过 | 两仓 Windows shader 同步 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
