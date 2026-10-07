@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 17，本提交完成后关闭 17。
-最近完成 [EXP-046](experiments/EXP-046-windows-subgroup-queue-append.md)：初测平均增加 0.005738 ms，唯一反序确认增加 0.003003 ms，均为一组快、两组慢；初测控制最大绝对组差 0.016867 ms，确认控制 0.013980 ms。未建立完整路径收益，判为 unproven，不保留。
-下一步：研究最后 image post 与 packed compose 融合，只针对单遍、同尺寸、无 history/mask/preprocess 的原合成路径；保留全部颜色算术及其余路由回退。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 18，本提交完成后关闭 18。
+最近完成 [EXP-047](experiments/EXP-047-windows-post-compose-fusion.md)：初测六批候选/六批基线平均省 0.005760 ms，唯一反序确认省 0.011840 ms，六组方向均正。但初测同路径控制已省 0.004793 ms、最大组差 0.010610 ms；确认控制均差 -0.010396 ms、最大绝对组差 0.014083 ms。较小组收益仅 0.002882/0.003159 ms，与控制明显重叠，仍不足以确认完整收益，判为 unproven，不保留。
+下一步：测试线性输入 encode 与首个 image pre 的融合；保留供 post/compose 使用的 encoded proxy，避免它的首次读回，严格检查采样、反射边界及编码舍入。
 
 ## 本轮证据
 
@@ -32,7 +32,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-043：regressed；提交 5c7f001ec0594c363f86586e81b96f6488b48500。
 - EXP-044：retained；提交 9b0a9cd640a118c7afed71690c9582ed3e39ef99。
 - EXP-045：regressed；提交 2bd19c8551b0c9c3a894ce13c034510bdceb45c4。
-- EXP-046：unproven；提交 本提交。
+- EXP-046：unproven；提交 d5909290266649a3a3a6cafe5c2b680f8a7c007b。
+- EXP-047：unproven；提交 本提交。
 
 ## 继承的研究与边界
 
