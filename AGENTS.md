@@ -53,6 +53,27 @@ python3 linux/build/build_network.py rdna4 --check /path/to/baseline
 
 Use `docs/ngx-verification/NGX-VERIFICATION.md` for image-quality methodology. Report GPU, driver, resolution, route, and repeated frame-time measurements.
 
+## AMD SQTT Research
+
+For Windows/RDNA4 instruction or wave-occupancy research, read
+[EXP-028](.ai/experiments/EXP-028-windows-sqtt-compatibility.md) before using the AMD ROCm trace decoder.
+It records the existing decoder version, compatibility patches, validation procedure, and evidence identities.
+Check existing local tools and saved captures before downloading, rebuilding, or collecting new GPU traces.
+
+- Local locations are recorded in ignored `.ai/local/sqtt-compat-study-20261007.md`; study artifacts are under
+  `build/windows/sqtt-compat-study-20261007/`. These materials are not included in a fresh clone.
+- The validated detailed-trace path requires the `ALU_EXEC`/`VMEM_EXEC` additions, a capture-specific compute-route
+  fallback, and driver ISA checked against captured ELF bytes and instruction boundaries. The route fallback was
+  validated only for a serialized capture with one initialized compute route; revalidate assumptions for new captures.
+- For EXP-028 instruction analysis, use `driver-final-results/timed-hardware-decode/` with
+  `instruction-final-validation.json`. Earlier detailed instruction outputs from EXP-027, `route-results/`, and
+  `driver-results/` are unsuitable for hotspots; the bundled LLVM disassembler can split RDNA4 instructions incorrectly.
+- Decoder success alone is insufficient: check token boundaries, dispatch/wave correspondence, instruction PCs,
+  control flow, and timing. Exclude kernels with unresolved negative durations or time ordering from timing conclusions;
+  valid addresses do not establish valid timing. See EXP-028 for the currently validated C256 DS sample and remaining limits.
+- Use sampled instruction durations to choose experiments, not to predict frame-time savings. Keep decoder sources,
+  patches, binaries, captures, and generated reports in ignored research directories; public records contain summaries.
+
 ## Commit & Pull Request Guidelines
 
 History uses descriptive, plain-English subjects, sometimes prefixed by a topic (`Preprocess:`, `Package names:`). Keep commits focused. PRs should explain behavior changes, affected platforms, validation, and related issues; include comparison images for rendering changes.

@@ -15,6 +15,9 @@
 确认 C256 DS 指令缓存低命中信号，并降低了纯队列领取优化的优先级。
 继续研究的 [EXP-027](experiments/EXP-027-windows-c256-common-code.md) 将机器码缩小 12.8%，
 但完整宿主收益未确认；补齐了实际 wave 驻留证据，详细 SQTT 指令解码仍有兼容边界。
+随后完成的 [EXP-028 SQTT 兼容定位](experiments/EXP-028-windows-sqtt-compatibility.md) 修复了隔离工具中的
+执行 token、计算路由和 ISA 指令边界问题，旧详细捕获的地址/控制流校验通过。
+C256 DS 的 104 个采样 wave 时序无异常，加载等待值得下一轮研究；尚无新的生产提速结论。
 
 实现约束以 [CLAUDE.md](../CLAUDE.md) 为准；贡献约定见 [AGENTS.md](../AGENTS.md)。
 稳定架构见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)，画质验证遵循
