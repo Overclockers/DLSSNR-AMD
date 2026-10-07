@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 16，本提交完成后关闭 16。
-最近完成 [EXP-045](experiments/EXP-045-windows-vector-layer-parameters.md)：完整路径三组分别慢 0.136133/0.116989/0.116492 ms，平均增加 0.123205 ms；同路径控制组差 -0.007984/-0.008891 ms。性能退步明确，不追加确认，判为 regressed，不保留。此前 EXP-044 的保留优化继续有效。
-下一步：将同一 subgroup 的就绪消费者合并预留队列位置；保持每个依赖计数、epoch、发布原子操作和工作组屏障，比较实际原子指令及完整路径。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 17，本提交完成后关闭 17。
+最近完成 [EXP-046](experiments/EXP-046-windows-subgroup-queue-append.md)：初测平均增加 0.005738 ms，唯一反序确认增加 0.003003 ms，均为一组快、两组慢；初测控制最大绝对组差 0.016867 ms，确认控制 0.013980 ms。未建立完整路径收益，判为 unproven，不保留。
+下一步：研究最后 image post 与 packed compose 融合，只针对单遍、同尺寸、无 history/mask/preprocess 的原合成路径；保留全部颜色算术及其余路由回退。
 
 ## 本轮证据
 
@@ -31,7 +31,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-042：unproven；提交 8b03c4839f2577dd6beb74ea4e59d6e8fb770935。
 - EXP-043：regressed；提交 5c7f001ec0594c363f86586e81b96f6488b48500。
 - EXP-044：retained；提交 9b0a9cd640a118c7afed71690c9582ed3e39ef99。
-- EXP-045：regressed；提交 本提交。
+- EXP-045：regressed；提交 2bd19c8551b0c9c3a894ce13c034510bdceb45c4。
+- EXP-046：unproven；提交 本提交。
 
 ## 继承的研究与边界
 
