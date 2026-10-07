@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-033](experiments/EXP-033-windows-qk-normalization-pair.md)：同进程筛选三组均慢，平均 +0.006923 ms；唯一原生产路径反序确认平均快 0.012518 ms，三组 +0.023292、+0.010430、+0.003831 ms。初测/确认方向不同，且同路径控制组有 -0.023446 / +0.006789 ms 变化。两个 context 的分配影响不能排除，现有证据不足以认定可重复净收益，判为 unproven，不保留且不追加确认。
-下一步：研究 ready queue 初始无依赖项的空间块顺序，保持 item ID、依赖计数、发布协议和每个输出的算术不变，检查缓存局部性机制。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-034](experiments/EXP-034-windows-spatial-ready-order.md)：初测平均慢 0.010490 ms；唯一反序确认仍慢 0.011433 ms，确认三组均退步（0.004086/0.022949/0.007263 ms）。同路径控制偏差约 0.005083 ms。当前 4×4 顺序没有净收益，拒绝保留；不据此否定所有调度或缓存优化。没有扩大到逐 item exactly-once/epoch 的插桩验证，因为性能门槛未通过。
+下一步：研究下采样末端 projection 将 K 循环提到输出行之外，显式复用同一 pooled LDS fragment，同时维持每行的 K 次序与原存储逻辑。
 
 ## 本轮证据
 
@@ -19,7 +19,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-029：correctness_failed；提交 7e20a21441d63a88551344cda776f96c34da1ffc。
 - EXP-030：unproven；提交 754ddb5c6fb5c2c0bfa25ec415a292d8e0fbd228。
 - EXP-031：regressed；提交 3c4f0b739659e83ef69fc39d62717de53a483142。
-- EXP-033：unproven；提交 本提交。
+- EXP-033：unproven；提交 ca4d7cc5fbad6c29afff2ab11e93891fd8d4e130。
+- EXP-034：regressed；提交 本提交。
 
 ## 继承的研究与边界
 
