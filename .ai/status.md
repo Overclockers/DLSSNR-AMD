@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-003019-five9070xt`，上限 5；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-063](experiments/EXP-063-windows-quant-half-integer-range.md)：实际 mode 1 初测 10.696373→10.719492 ms，平均慢 0.023119 ms，三组全部更慢；同路径控制最大绝对组差 0.012616 ms。判为 regressed，不保留；无需用追加确认寻找有利批次。前三版及无效接入记录全部保存。
-下一步：检查相邻不同 kernel 的纯 buffer descriptor 是否兼容，在完整保留 pipeline/push/dispatch/barrier 的条件下测试绑定复用。
+运行 `20261008-003019-five9070xt`，上限 5；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-064](experiments/EXP-064-windows-compatible-buffer-binding.md)：初测节省 0.001673 ms，各组方向不一致；唯一反序确认节省 0.010050 ms，其中一组反而慢。初测与确认同路径控制最大绝对组差分别 0.019462 / 0.002176 ms。实际减少绑定尚未形成稳定且可分辨的完整路径收益，判为 unproven，不保留。
+下一步：针对缓存 noise 的 half→float→half 往返，先以全部 half 编码和实际驱动 ISA 验证直接 half 传递，再测试图像输入路径。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-061：retained；提交 f5627689b2ce1879455a05e7f72c4f6232532ef6。
 - EXP-062：unproven；提交 cb6efa99ca9a4c20d8297f9443572485d99ee25b。
-- EXP-063：regressed；提交 本提交。
+- EXP-063：regressed；提交 5a27e97680ff51007a85f5bcb2bf913ab3642fe5。
+- EXP-064：unproven；提交 本提交。
 
 ## 继承状态与边界
 
