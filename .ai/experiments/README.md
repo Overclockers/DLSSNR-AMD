@@ -1,6 +1,6 @@
 # 优化实验
 
-已完成 24 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
+已完成 25 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
 按用户要求暂缓游戏测试。
 
 ## 索引
@@ -31,6 +31,7 @@
 | [EXP-022](EXP-022-windows-c256-uniform-head-addresses.md) | C256 DS 显式 wave/head 标量地址 | 未保留；完整路径三组均慢，平均 +0.031888 ms；附本轮 7/10 收尾 | 20 份宿主、三份 standalone 输出一致 | 两仓生产未改 | 用户暂缓 |
 | [EXP-023](EXP-023-windows-vit-key-value-prefetch.md) | ViT attention 完整 K/V 块预取 | 未保留；unproven | 40 份 packed 和 3 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
 | [EXP-024](EXP-024-windows-packed-input-feature-lds.md) | 输入特征 LDS 成对存储 | 未保留；unproven | 40 份 packed 和 3 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
+| [EXP-025](EXP-025-windows-transposed-input-feature-lds.md) | 输入特征 LDS 转置与对齐填充 | 未保留；unproven | 60 份 packed 和 6 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
