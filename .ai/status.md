@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 11，本提交完成后关闭 11。
-最近完成 [EXP-040](experiments/EXP-040-windows-compose-workgroup-shape.md)：16×8 初测节省 0.002090 ms，小于同路径控制 0.005265 ms；唯一反序确认反而平均增加 0.005294 ms，组间方向不一致，确认控制均差 0.006553 ms。32×8 初测三组均慢，平均增加 0.011954 ms，控制也有 0.016389 ms 同级偏差。未建立完整路径收益，判为 unproven，两版均不保留。
-下一步：测量固定中间网络步骤的 secondary command-buffer 复用，保留全部 dispatch/barrier，检查 CPU 录制缩短能否减少完整 NR 间隔。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 12，本提交完成后关闭 12。
+最近完成 [EXP-041](experiments/EXP-041-windows-cached-middle-recording.md)：原路径初测平均增加 0.007252 ms；唯一反序确认增加 0.008415 ms，两组慢、一组略快。确认控制均差为 +0.005237 ms，组差 -0.000983/+0.011456 ms。CPU 录制工作减少未转化为可重复的完整 NR 收益，判为 unproven，不保留。
+下一步：检查图像 pre/post 的中心点纹理采样，使用带尺寸/边界回退的整数 texelFetch，保持原采样值和格式精度。
 
 ## 本轮证据
 
@@ -26,7 +26,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-037：unproven；提交 5813758f6ea9bb4c738e81345833fbc4b4baa4b7。
 - EXP-038：rejected；提交 33343054ec7ee3524c3cb489020bf0e80ee8661e。
 - EXP-039：unproven；提交 5a7fd21e19620abd3af813a321143b47c116ae99。
-- EXP-040：unproven；提交 本提交。
+- EXP-040：unproven；提交 efcb9df2ab6e461bfec39388d4962e81db8a10a0。
+- EXP-041：unproven；提交 本提交。
 
 ## 继承的研究与边界
 
