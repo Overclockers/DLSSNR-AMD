@@ -1530,9 +1530,24 @@ void main() {
         const uint gx = gl_NumWorkGroups.x, gy = gl_NumWorkGroups.y;
         const uint lin = gl_WorkGroupID.x + gx * gl_WorkGroupID.y;
         const uint G = pc.remap;
+#if NR_REMAP_PAIR
+        if (G == 2u) {
+            const uint span = 2u * gy;
+            const uint bm = (lin / span) * 2u;
+            const uint r = lin - (bm / 2u) * span;
+            if (bm + 1u < gx) {
+                nr_gm = bm + (r & 1u); nr_gn = r >> 1u;
+            } else {
+                nr_gm = bm; nr_gn = r;
+            }
+        } else {
+#endif
         const uint grp = lin / (G * gy), bm = grp * G, gt = min(G, gx - bm);
         const uint r = lin - grp * G * gy;
         nr_gm = bm + r % gt; nr_gn = r / gt;
+#if NR_REMAP_PAIR
+        }
+#endif
     }
     const uint mg0 = nr_gm * uint(NR_MTILE);
     const uint ng0 = nr_gn * uint(NR_NTILE);

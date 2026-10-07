@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-060；EXP-001/002/007/009/011/012/013/044/048/056 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-061；EXP-001/002/007/009/011/012/013/044/048/056/061 保留优化，其余轮次未建立可靠新收益。
 另完成 EXP-050：当前组合对指定上游的四分辨率直接验收，不计入优化假设预算。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
@@ -70,6 +70,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-058](EXP-058-windows-vit-activation-buffer-reference.md) | ViT 激活片段的 buffer-reference 读取 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-059](EXP-059-windows-gemm-full-subgroups.md) | GEMM 的完整 subgroup 编译契约 | 未保留；no_codegen_change | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-060](EXP-060-windows-vit-paired-k-activation-layout.md) | ViT 相邻 K16 激活 tile 的成对布局 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-061](EXP-061-windows-gemm-remap-pair-division.md) | GEMM 两列映射整数除法 | 保留；初测 -0.014475 ms，确认 -0.021672 ms | 126 对目标历史、边界/回退、两仓构建通过 | 两仓 Windows shader 同步 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
