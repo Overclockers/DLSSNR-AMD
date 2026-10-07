@@ -61,6 +61,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-049](EXP-049-windows-post-rgb-weight-panels.md) | Image post 的 RGB 权重面板读取 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-050](EXP-050-windows-upstream-resolution-comparison.md) | 当前分支对 82560c4，四分辨率直接比较 | 核心完整区间：1080p -0.485%、2258×1270 -3.106%、1440p -3.096%、4K -3.483% | 136 份静态图逐字节一致；25,600 个正式测量帧 | 直接编译两端核心；非宿主 DLL A/B | 用户暂缓 |
 | [EXP-051](EXP-051-windows-vit-fragment-word-loads.md) | ViT 片段按 8 字节读取 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-052](EXP-052-windows-vit-tile-dependency.md) | ViT 扩张/收缩的分块依赖 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
