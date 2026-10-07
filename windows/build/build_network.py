@@ -29,6 +29,8 @@ R = Path(__file__).resolve().parents[2]
 GLSLANG = R / 'toolchain/glslang/bin/glslang'
 RUNTIME = ['runtime_alpha', 'runtime_encode', 'runtime_encode_sampled', 'runtime_encode_direct', 'runtime_transfer', 'runtime_transfer_packed', 'runtime_prep', 'runtime_depth', 'cascade_lograt', 'cascade_blur', 'cascade_feed']
 MOTION = ['motion_luma', 'motion_estimate']
+# Runtime alternates consume the base graph node's packed weights and push record.
+RUNTIME_NETWORK = {'runtime_preencode': ('fswinimagepreds32', ['NR_FUSED_ENCODE=1'])}
 
 
 QUAD = True   # --no-quad: the pair loops as written (A/B)
@@ -104,8 +106,12 @@ def main():
             source = 'runtime_transfer'
             defines.append('NR_TRANSFER_PACKED=1')
         glslang(a.arch, R / 'windows/shaders/passes' / f'{source}.comp', defines, out / 'runtime' / f'{k}.spv')
+    for name, (base_name, extra) in RUNTIME_NETWORK.items():
+        base = pipelines[base_name]
+        glslang(a.arch, R / 'windows/shaders' / a.arch / base['source'], base['defines'] + a.define + extra,
+                out / 'runtime' / f'{name}.spv', unroll=base['source'] == 'fswin_t.comp', network=True)
     print(f'{out}: {len(pipelines)} network pipelines, {len(table["variants"]) + len(MOTION)} temporal, '
-          f'{len(RUNTIME)} runtime')
+          f'{len(RUNTIME) + len(RUNTIME_NETWORK)} runtime')
 
     if a.check:
         bad = [p.name for p in sorted(out.iterdir()) if p.is_file()

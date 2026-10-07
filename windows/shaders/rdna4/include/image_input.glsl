@@ -50,7 +50,29 @@ layout(set=0,binding=9) uniform sampler2D nr_history;
 layout(set=0,binding=10) uniform sampler2D nr_depth;
 #include "temporal_history.glsl"
 #else
+#if NR_FUSED_ENCODE
+// Match runtime_encode.comp exactly, including its FP32 proxy store. The
+// original image uses the same nearest sampler as the unfused proxy reader.
+layout(set=0,binding=6,std430) readonly buffer NrEncode { vec4 nr_encode_control[1]; };
+layout(set=0,binding=7) uniform sampler2D nr_tex;
+layout(set=0,binding=8,rgba32f) uniform writeonly image2D nr_proxy;
+float nr_pre_srgb_encode(float x) {
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+}
+
+vec4 nr_pre_encode(vec4 src) {
+    vec3 n = max(src.rgb, vec3(0.0)) / max(nr_encode_control[0].x, 1e-4);
+    const float luma = dot(n, vec3(0.2126, 0.7152, 0.0722));
+    if (luma > nr_encode_control[0].y) {
+        const float span = 1.0 - nr_encode_control[0].y;
+        n *= (nr_encode_control[0].y + span * (1.0 - exp(-(luma - nr_encode_control[0].y) / span))) / luma;
+    }
+    n = clamp(n, vec3(0.0), vec3(1.0));
+    return vec4(nr_pre_srgb_encode(n.r),nr_pre_srgb_encode(n.g),nr_pre_srgb_encode(n.b),src.a);
+}
+#else
 layout(set=0,binding=6) uniform sampler2D nr_tex;
+#endif
 #endif
 shared NR_F16 input_features[4*256];
 
@@ -70,7 +92,13 @@ void nr_prepare_features() {
     const int sx=x<sw?int(x):2*int(sw)-int(x)-2;
     const int sy=y<sh?int(y):2*int(sh)-int(y)-2;
     const vec2 uv=vec2((float(sx)+0.5)/float(sw),(float(sy)+0.5)/float(sh));
+#if NR_FUSED_ENCODE
+    const vec4 rgba=nr_pre_encode(textureLod(nr_tex,uv,0.0));
+    // Padded samples reflect as before; each real proxy texel has one writer.
+    if(x<sw && y<sh)imageStore(nr_proxy,ivec2(x,y),rgba);
+#else
     const vec4 rgba=textureLod(nr_tex,uv,0.0);
+#endif
 #if NR_HALF_RTE
     // f32 sample, rounded to nearest by the conversion (fswin_t.comp NR_HALF_RTE).
     const f16vec3 centered=f16vec3(f16vec3(max(rgba.rgb,vec3(-3.4028234663852886e38)))-f16vec3(0.5));

@@ -311,7 +311,7 @@ struct LinearInputBinding {
     VkImage image{};
     VkImageView view{};
     VkDescriptorPool pool{};
-    VkDescriptorSet set{}, transfer_set{}, packed_set{};
+    VkDescriptorSet set{}, transfer_set{}, packed_set{}, pre_encode_set{};
     std::shared_ptr<int> owner;
     ~LinearInputBinding() {
         if (pool) vkDestroyDescriptorPool(device, pool, nullptr);
@@ -322,6 +322,8 @@ struct LinearInputBinding {
 struct Runtime::Impl {
     NrSession session;
     nrvk::Kernel alpha, mask_pre, mask_resolve;
+    nrvk::Kernel pre_encode;
+    nrvk::Buffer encode_controls;
     // The linear-light path: the proxy is made in place on tex_in and the
     // original kept here for the decode. Only when RuntimeConfig::linear_input.
     nrvk::Kernel encode, encode_sampled, encode_direct, transfer_pass, transfer_packed;
@@ -647,6 +649,8 @@ struct Runtime::Impl {
         // Caller has already completed its submitted command buffers.
         auto& s = session;
         if (!s.ctx.device) return;
+        if (pre_encode.device) pre_encode.destroy();
+        if (encode_controls.handle) s.ctx.destroy(encode_controls);
         for (auto& d : direct_ring) {
             direct_slot_release(d);
             if (d.pool) vkDestroyDescriptorPool(s.ctx.device, d.pool, nullptr);
@@ -1049,6 +1053,19 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
             (packed.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
             impl_->transfer_packed.create(s.ctx, (adapters / "runtime_transfer_packed.spv").string(), {}, 36,
                                           {&s.surf0, shown, keep, answer});
+    }
+    // An alternate of fswinimagepreds32, with the same packed weights, push
+    // record and noise table. It is not a new graph node or packing layout.
+    // The separate encode remains available when this optional module is absent.
+    if (impl_->transfer_packed.device && !impl_->scaled && config.max_passes == 1 &&
+        s.kern.count("fswinimagepreds32") && s.steps.size() == s.disp.size() &&
+        !s.steps.empty() && s.steps.front().k == &s.kern.at("fswinimagepreds32") &&
+        std::ifstream(adapters / "runtime_preencode.spv").good()) {
+        impl_->encode_controls = s.ctx.buffer(16);
+        auto proxy = s.tex_in; proxy.sampler = VK_NULL_HANDLE; proxy.layout = VK_IMAGE_LAYOUT_GENERAL;
+        impl_->pre_encode.create(s.ctx, (adapters / "runtime_preencode.spv").string(),
+            {s.act.handle, s.act.handle, s.wgt.handle, s.wgt.handle, s.wgt.handle, s.act.handle, impl_->encode_controls.handle},
+            sizeof(PushFSwin) + sizeof(PushPreImage), {&impl_->keep, &proxy});
     }
     if (config.preprocess && !mask_config.width) {
         impl_->prep = true;
@@ -1484,6 +1501,8 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
     // matching model/frame extents and no other original-color reader after it.
     const bool direct_packed = c.apply_model && direct_original && input_binding->packed_set &&
         (frame.usage & VK_IMAGE_USAGE_STORAGE_BIT);
+    const bool fused_input = direct_packed && input_binding->pre_encode_set && impl_->pre_encode.device &&
+        passes == 1 && !mask && !temporal && !impl_->prep && !impl_->scaled;
     const bool sampled_colour = ds || sampled_encode;
     barrier(cmd, frame.image, frame.before, sampled_colour ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             frame.before_stage, frame.before_access,
@@ -1567,9 +1586,11 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         struct { uint32_t w, h; float white, knee; } push{nw, nh, impl_->white_point, 0.75f};
+        if (!fused_input)
         dispatch(cmd, direct_original ? impl_->encode_direct : sampled_encode ? impl_->encode_sampled : impl_->encode,
                  (nw + 7) / 8, (nh + 7) / 8, 1, &push, sizeof push,
                  sampled_encode ? input_binding->set : VK_NULL_HANDLE);
+        if (!fused_input)
         barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -1871,6 +1892,19 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
     // store[k] is copied into the bound history image before the pass and
     // the model's write (surf1) copied back after it. With one pass the
     // history round trip is the single copy it always was.
+    if (fused_input) {
+        // GPU-ordered updates keep replay and multiple frames in flight safe;
+        // a host write could race the previous dispatch's descriptor read.
+        VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        mb.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; mb.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 1, &mb, 0, nullptr, 0, nullptr);
+        const float values[4] = {impl_->white_point, 0.75f, 0.0f, 0.0f};
+        vkCmdUpdateBuffer(cmd, impl_->encode_controls.handle, 0, sizeof values, values);
+        mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &mb, 0, nullptr, 0, nullptr);
+    }
     for (uint32_t pass = 0; pass < passes; ++pass) {
         if (pass > 0 && impl_->cascade_detail) {
             // Detail only: the first pass's input with the previous pass's
@@ -1946,7 +1980,14 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
                 std::memcpy(pre_push + kPreNoiseFieldAt, &no_field, 4);
                 push = pre_push;
             }
+            if (fused_input && i == 0) { use = &impl_->pre_encode; set = input_binding->pre_encode_set; }
             dispatch(cmd, *use, step.gx, step.gy, step.gz, push, step.push_bytes, set);
+            // The proxy is first produced by pre; all subsequent consumers
+            // use the original sampled layout after this write dependency.
+            if (fused_input && i == 0)
+                barrier(cmd, s.tex_in.handle, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
             // Execution-only between network steps when the arena is coherent,
             // invalidate-only when it is not; the barrier after the last step
             // stays full, because the passes that follow it are not part of
@@ -2131,11 +2172,13 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
     if (vkCreateImageView(binding->device, &vi, nullptr, &binding->view) != VK_SUCCESS) return {};
     const bool direct_original = impl_->encode_direct.device != VK_NULL_HANDLE;
     const bool direct_packed = direct_original && impl_->transfer_packed.device && (frame.usage & VK_IMAGE_USAGE_STORAGE_BIT);
+    const bool with_pre = direct_packed && impl_->pre_encode.device;
     const VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, direct_packed ? 6u : direct_original ? 4u : 2u},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, direct_packed ? 5u : direct_original ? 3u : 1u}};
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, direct_packed ? (with_pre ? 7u : 6u) : direct_original ? 4u : 2u},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, direct_packed ? (with_pre ? 6u : 5u) : direct_original ? 3u : 1u},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7u}};
     VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pi.maxSets = direct_packed ? 3u : direct_original ? 2u : 1u; pi.poolSizeCount = 2; pi.pPoolSizes = sizes;
+    pi.maxSets = direct_packed ? (with_pre ? 4u : 3u) : direct_original ? 2u : 1u; pi.poolSizeCount = with_pre ? 3u : 2u; pi.pPoolSizes = sizes;
     if (vkCreateDescriptorPool(binding->device, &pi, nullptr, &binding->pool) != VK_SUCCESS) return {};
     VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     ai.descriptorPool = binding->pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &impl_->encode_sampled.dsl;
@@ -2166,6 +2209,13 @@ std::shared_ptr<LinearInputBinding> Runtime::bind_linear_input(const ColourFrame
             binding->packed_set = kernel_set(binding->device, binding->pool, impl_->transfer_packed, {},
                                             {&session.surf0, &session.tex_in, &original, &output});
             if (!binding->packed_set) return {};
+            if (with_pre) {
+                auto proxy = session.tex_in; proxy.sampler = VK_NULL_HANDLE; proxy.layout = VK_IMAGE_LAYOUT_GENERAL;
+                binding->pre_encode_set = kernel_set(binding->device, binding->pool, impl_->pre_encode,
+                    {session.act.handle, session.act.handle, session.wgt.handle, session.wgt.handle, session.wgt.handle, session.act.handle, impl_->encode_controls.handle},
+                    {&original, &proxy});
+                if (!binding->pre_encode_set) return {};
+            }
         }
     }
     return binding;
