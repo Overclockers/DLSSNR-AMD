@@ -504,6 +504,15 @@ layout(set = 0, binding = 1, std430) NR_COH    buffer ActF32  { float   act_f32[
 layout(set = 0, binding = 2, std430) readonly buffer WgtE4M3 { NR_E4M3 wgt_e4m3[]; };
 layout(set = 0, binding = 3, std430) readonly buffer WgtF32  { float   wgt_f32[]; };
 layout(set = 0, binding = 4, std430) NR_COH    buffer ActE4M3x4 { fe4m3vec4 act_e4m3x4[]; };
+// One aligned 8-byte word avoids LLPC's identity byte permutations when
+// constructing FP8 fragments. The view preserves every byte and its order.
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+layout(set=0,binding=4,std430) NR_COH buffer ActWord8 { uvec2 act_word8[]; };
+layout(set=0,binding=2,std430) readonly buffer WgtWord8 { uvec2 wgt_word8[]; };
+#define NR_ACT_PAIR(q) const uvec2 nr_dw=act_word8[(q)/2u]; \
+    const fe4m3vec4 r0=uintBitsToFloate4m3EXT(unpack8(nr_dw.x)), r1=uintBitsToFloate4m3EXT(unpack8(nr_dw.y));
+#define NR_WGT_PAIR(q) const uvec2 nr_dw=wgt_word8[(q)/2u]; \
+    const fe4m3vec4 r0=uintBitsToFloate4m3EXT(unpack8(nr_dw.x)), r1=uintBitsToFloate4m3EXT(unpack8(nr_dw.y));
 // Packed view of the weights for the hoisted-address QKV loads.
 layout(set = 0, binding = 2, std430) readonly buffer WgtE4M3x4 { fe4m3vec4 wgt_e4m3x4[]; };
 #ifndef NR_ATTN_KOFF
@@ -724,7 +733,7 @@ float nr_fast_exp(float x) {
 // and the chunk base are added once; each k step is a literal, which goes
 // into the load's immediate offset instead of two VALU adds per fragment.
 #define NR_QLA_I(i) NR_QG(i) { const uint nrq = (qal4[i] + k04) + kkl * 4u; \
-    const fe4m3vec4 r0 = act_e4m3x4[nrq], r1 = act_e4m3x4[nrq + 1u]; \
+    NR_ACT_PAIR(nrq) \
     for (int v = 0; v < 4; ++v) { qfa[cur][i][v] = r0[v]; qfa[cur][i][v + 4] = r1[v]; } \
     NR_QSW_A(i) }
 #else
@@ -782,7 +791,7 @@ float nr_fast_exp(float x) {
 #endif
 #if NR_ATTN_KOFF
 #define NR_QLB_J(j) { const uint nrq = (qbl4[j] + k04) + kkl * 4u; \
-    const fe4m3vec4 r0 = wgt_e4m3x4[nrq], r1 = wgt_e4m3x4[nrq + 1u]; \
+    NR_WGT_PAIR(nrq) \
     for (int v = 0; v < 4; ++v) { qfb[cur][j][v] = r0[v]; qfb[cur][j][v + 4] = r1[v]; } \
     NR_QSW_B(j) }
 #else
