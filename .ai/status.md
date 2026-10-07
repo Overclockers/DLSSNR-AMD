@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 10，本提交完成后关闭 10。
-最近完成 [EXP-039](experiments/EXP-039-windows-lds-cse-address-control.md)：初测三组均慢，平均增加 0.013629 ms；唯一原路径反序确认均差 +0.003565 ms，但三组 +0.023219/-0.004470/-0.008052 ms。确认同路径控制均差 +0.003325 ms，组差 -0.002621/+0.009271 ms。候选效果与控制同级且方向不稳，判为 unproven，不保留。
-下一步：研究约 0.133 ms 的 packed compose dispatch：先检查实际 driver VGPR，再测较大 workgroup 是否改善每个工作组的 wave 数和图像访问排列。另保留中间网络 command-buffer 录制复用方向，需先检查 controls/timing/lifetime 的依赖。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 11，本提交完成后关闭 11。
+最近完成 [EXP-040](experiments/EXP-040-windows-compose-workgroup-shape.md)：16×8 初测节省 0.002090 ms，小于同路径控制 0.005265 ms；唯一反序确认反而平均增加 0.005294 ms，组间方向不一致，确认控制均差 0.006553 ms。32×8 初测三组均慢，平均增加 0.011954 ms，控制也有 0.016389 ms 同级偏差。未建立完整路径收益，判为 unproven，两版均不保留。
+下一步：测量固定中间网络步骤的 secondary command-buffer 复用，保留全部 dispatch/barrier，检查 CPU 录制缩短能否减少完整 NR 间隔。
 
 ## 本轮证据
 
@@ -25,7 +25,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-036：unproven；提交 8593bfdaa02c18fe26cb3474526a0a51cfb91c10。
 - EXP-037：unproven；提交 5813758f6ea9bb4c738e81345833fbc4b4baa4b7。
 - EXP-038：rejected；提交 33343054ec7ee3524c3cb489020bf0e80ee8661e。
-- EXP-039：unproven；提交 本提交。
+- EXP-039：unproven；提交 5a7fd21e19620abd3af813a321143b47c116ae99。
+- EXP-040：unproven；提交 本提交。
 
 ## 继承的研究与边界
 
