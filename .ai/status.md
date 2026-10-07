@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-152904-schedule9070xt`，上限 20；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-037](experiments/EXP-037-windows-stream-probability-context.md)：初测均差 +0.004422 ms，原路径唯一反序确认 +0.005527 ms，但确认三组为 +0.015107/+0.004396/-0.002923 ms。初测控制可达 ±0.014601 ms，确认控制均差 -0.004236 ms；当前效果未可靠超过控制波动，判为 unproven，不保留。
-下一步：转向新的高成本形状：输入/输出 image Swin 各约 0.9 ms，检查单 wave 拥有完整 64-token 窗口、合法保留 K/V 寄存器是否能减少跨 wave 交换。decoder upsample 仅约 0.0054 ms，先降低其 gain 向量读/地址简化优先级，不为未实现想法计数。
+运行 `20261007-152904-schedule9070xt`，上限 20；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-038](experiments/EXP-038-windows-image-window-wave-ownership.md)：pre-only 完整宿主三组均退步，平均慢 0.027411 ms，各组慢 0.042279/0.013145/0.026809 ms；同路径控制组差约 -0.001662/-0.006244 ms。退步明确，不消耗追加确认。组合版及 post-only 因正确性失败拒绝，pre-only 因性能退步拒绝；无生产修改。
+下一步：检查 Windows LLPC 中 opaque-zero LDS 地址是否还需要抑制 CSE；以真实机器码、VGPR/scratch 和精确输出作为首轮门槛。
 
 ## 本轮证据
 
@@ -23,7 +23,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270 输入、2368×1280 工作尺寸，800 t
 - EXP-034：regressed；提交 8b97318a2634dd8a2ea39196c3346b9fecab98a6。
 - EXP-035：unproven；提交 57cc650b1d3e3c908fb475856b4636c538d24dcd。
 - EXP-036：unproven；提交 8593bfdaa02c18fe26cb3474526a0a51cfb91c10。
-- EXP-037：unproven；提交 本提交。
+- EXP-037：unproven；提交 5813758f6ea9bb4c738e81345833fbc4b4baa4b7。
+- EXP-038：rejected；提交 本提交。
 
 ## 继承的研究与边界
 
