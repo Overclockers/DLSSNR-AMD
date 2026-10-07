@@ -1,6 +1,6 @@
 # 优化实验
 
-已完成 35 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
+已完成 36 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
 按用户要求暂缓游戏测试。
@@ -44,6 +44,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-033](EXP-033-windows-qk-normalization-pair.md) | Q/K 归一化成对 lane 交换 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-034](EXP-034-windows-spatial-ready-order.md) | 初始 ready items 的空间块顺序 | 未保留；regressed | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-035](EXP-035-windows-downsample-input-reuse.md) | 下采样 projection 输入片段复用 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-036](EXP-036-windows-defer-value-projection.md) | 延后 V 投影以缩短存活期 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
