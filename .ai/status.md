@@ -1,12 +1,12 @@
 # 当前状态
 
-更新日期：2026-10-07（Asia/Hong_Kong）。
+更新日期：2026-10-08（Asia/Hong_Kong）。
 
 ## 当前工作
 
-运行 `20261007-214238-codegen9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-057](experiments/EXP-057-windows-vit-empty-wave-exit.md)：初测平均节省 0.001525 ms，各组 0.000577/0.010375/-0.006376 ms，处于控制波动内。唯一反序确认平均节省 0.008455 ms，但组差 0.025052/-0.005356/0.005669 ms，方向仍不稳定；控制最大绝对组差 0.004170 ms。无法确认可重复的完整路径收益，判为 unproven，不保留。
-下一步：检查 ViT 激活片段通过 buffer-reference 全局地址读取的代码生成，保持原始字节和矩阵次序；与既有 residual BDA 和描述符 word-load 实验区分。
+运行 `20261007-214238-codegen9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-058](experiments/EXP-058-windows-vit-activation-buffer-reference.md)：完整宿主初测 10.725677→10.984511 ms，平均慢 0.258834 ms；三组分别慢 0.259664/0.258209/0.258628 ms，明显大于同路径控制最大绝对组差 0.004721 ms。判定本实现退步，不保留，也不消耗追加确认额度。全局地址寻址并未减少该驱动的净工作量；不能从 VMEM 指令名称推断更快。
+下一步：在独立原生设备上查询并启用 computeFullSubgroups，仅为 localSizeX 是 32 倍数的 GEMM pipeline 设置 REQUIRE_FULL_SUBGROUPS，比较实际机器码；保持宿主设备契约原样。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-054：unproven；提交 642f2b12788676e18f3fa10066ebd0f57685c607。
 - EXP-055：unproven；提交 91988095f7273c103d52e05e1adb8a416ae1d95a。
 - EXP-056：retained；提交 ee8868794e932b7904cc27e4894d00563102a1c7。
-- EXP-057：unproven；提交 本提交。
+- EXP-057：unproven；提交 22d8b4b8800db20ce81c9fa65fe7afd9fb046a96。
+- EXP-058：regressed；提交 本提交。
 
 ## 继承状态与边界
 

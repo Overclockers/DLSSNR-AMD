@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-057；EXP-001/002/007/009/011/012/013/044/048 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-058；EXP-001/002/007/009/011/012/013/044/048 保留优化，其余轮次未建立可靠新收益。
 另完成 EXP-050：当前组合对指定上游的四分辨率直接验收，不计入优化假设预算。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
@@ -67,6 +67,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-055](EXP-055-windows-vit-cross-chunk-prefetch.md) | ViT 扩张的跨 K-chunk 预取 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-056](EXP-056-windows-vit-contract-fixed-dimensions.md) | ViT 收缩固定 K/N | 保留；确认节省 0.037738 ms | 126 对目标历史、边界/回退、两仓构建精确通过 | 两仓 Windows shader 同步 | 用户暂缓 |
 | [EXP-057](EXP-057-windows-vit-empty-wave-exit.md) | ViT 收缩尾部空 wave 提前退出 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-058](EXP-058-windows-vit-activation-buffer-reference.md) | ViT 激活片段的 buffer-reference 读取 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
