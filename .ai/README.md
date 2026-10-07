@@ -9,6 +9,13 @@
 3. [decisions.md](decisions.md)：长期决策、理由和可选有损优化的要求。
 4. [experiments/README.md](experiments/README.md)：实验索引、记录格式与结果。
 
+后续研究建议见 [EXP-025 之后的研究方向](research-directions-20261007.md)（2026-10-07）：
+旧证据复盘和待验证候选，不是新的实验结果。
+随后完成的 [EXP-026 瓶颈实测](experiments/EXP-026-windows-swin-bottleneck-profiling.md)
+确认 C256 DS 指令缓存低命中信号，并降低了纯队列领取优化的优先级。
+继续研究的 [EXP-027](experiments/EXP-027-windows-c256-common-code.md) 将机器码缩小 12.8%，
+但完整宿主收益未确认；补齐了实际 wave 驻留证据，详细 SQTT 指令解码仍有兼容边界。
+
 实现约束以 [CLAUDE.md](../CLAUDE.md) 为准；贡献约定见 [AGENTS.md](../AGENTS.md)。
 稳定架构见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)，画质验证遵循
 [NGX-VERIFICATION.md](../docs/ngx-verification/NGX-VERIFICATION.md)。引用这些资料，不复制维护。

@@ -1,6 +1,7 @@
 # 优化实验
 
-已完成 25 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
+已完成 27 轮离线探索；EXP-001/002/007/009/011/012/013 保留优化，其余轮次未建立可靠新收益。
+EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 按用户要求暂缓游戏测试。
 
 ## 索引
@@ -32,6 +33,8 @@
 | [EXP-023](EXP-023-windows-vit-key-value-prefetch.md) | ViT attention 完整 K/V 块预取 | 未保留；unproven | 40 份 packed 和 3 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
 | [EXP-024](EXP-024-windows-packed-input-feature-lds.md) | 输入特征 LDS 成对存储 | 未保留；unproven | 40 份 packed 和 3 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
 | [EXP-025](EXP-025-windows-transposed-input-feature-lds.md) | 输入特征 LDS 转置与对齐填充 | 未保留；unproven | 60 份 packed 和 6 份 FP32 全图一致；未扩大验收 | 两仓生产未改 | 用户暂缓 |
+| [EXP-026](EXP-026-windows-swin-bottleneck-profiling.md) | 队列时间线、RGP 计数器、C256 contract 局部循环 | 定位有效；C256 DS 指令命中约 44.4%，原型机器码反增 1 KiB，未保留 | 36,555 任务恰好一次；18 份静态 FP32 输出一致 | 私有诊断；两仓生产未改 | 用户暂缓 |
+| [EXP-027](EXP-027-windows-c256-common-code.md) | SQTT 驻留解码、C256 expansion 局部循环、公共 DS 投影 | 公共 DS 代码 -12.8%，完整宿主初测/确认方向不同，unproven；循环版 spill | 21 份 FP32、32 份 packed 输出一致；6,400 宿主测量帧 | 两仓生产未改；详细指令解码未验证 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
