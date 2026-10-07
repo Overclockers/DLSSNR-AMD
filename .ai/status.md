@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-214238-codegen9070xt`，上限 10；已启动 2，本提交完成后关闭 2。
-最近完成 [EXP-052](experiments/EXP-052-windows-vit-tile-dependency.md)：两版各八组局部 A/B 均变慢；唯一追加确认中，工作组发布平均慢 0.022377 ms，wave 发布平均慢 0.019085 ms。全部方向与控制差距支持本算子对原型退步；未提升到完整宿主。此结论只覆盖该 ViT 对与两种发布实现，不证明所有 Windows 分块依赖方案无效。
-下一步：验证保持原 shader 与逐层屏障的 token 分块执行：缩短 ViT 中间激活的生产到消费距离，避免本实验的原子轮询成本。
+运行 `20261007-214238-codegen9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
+最近完成 [EXP-053](experiments/EXP-053-windows-vit-token-chunk-locality.md)：256-token 将 2 个 dispatch 增至 8 个，局部平均慢 0.136186 ms；512-token 只拆成两段、4 个 dispatch，仍慢 0.029177 ms。两版各八组均变慢，明显高于对应控制差；未进入完整宿主，判为 regressed。
+下一步：检查矩阵乘法转置后的输出布局：用原 K 累加次序让收缩算子的残差和输出变为连续字节，严格验证生成代码及数值。
 
 ## 本轮证据
 
@@ -16,7 +16,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 本轮保留数量：0；历史收益不重复计入本轮。
 
 - EXP-051：unproven；提交 a38c212a0deab9bd9a281e7d27747c59a01d03e8。
-- EXP-052：regressed；提交 本提交。
+- EXP-052：regressed；提交 d6a98bb77880dbd5bb8d4ee33d0d3f2ff77720ff。
+- EXP-053：regressed；提交 本提交。
 
 ## 继承状态与边界
 
