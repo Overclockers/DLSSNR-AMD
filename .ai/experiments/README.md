@@ -1,6 +1,6 @@
 # 优化实验
 
-已完成 48 轮离线探索；EXP-001/002/007/009/011/012/013/044/048 保留优化，其余轮次未建立可靠新收益。
+已完成 49 轮离线探索；EXP-001/002/007/009/011/012/013/044/048 保留优化，其余轮次未建立可靠新收益。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
 按用户要求暂缓游戏测试。
@@ -57,6 +57,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-046](EXP-046-windows-subgroup-queue-append.md) | Subgroup 合并就绪队列入队 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-047](EXP-047-windows-post-compose-fusion.md) | Image post 与 packed compose 融合 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-048](EXP-048-windows-encode-image-pre-fusion.md) | 线性编码与 image pre 融合 | 保留；初测 -0.028813 ms，确认 -0.026916 ms | 两仓序列/边界图/FP32 proxy 精确一致，缺模块回退通过 | 全量离线构建与 ABI 通过 | 用户暂缓 |
+| [EXP-049](EXP-049-windows-post-rgb-weight-panels.md) | Image post 的 RGB 权重面板读取 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
