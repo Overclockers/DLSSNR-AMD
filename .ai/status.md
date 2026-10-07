@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-214238-codegen9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-058](experiments/EXP-058-windows-vit-activation-buffer-reference.md)：完整宿主初测 10.725677→10.984511 ms，平均慢 0.258834 ms；三组分别慢 0.259664/0.258209/0.258628 ms，明显大于同路径控制最大绝对组差 0.004721 ms。判定本实现退步，不保留，也不消耗追加确认额度。全局地址寻址并未减少该驱动的净工作量；不能从 VMEM 指令名称推断更快。
-下一步：在独立原生设备上查询并启用 computeFullSubgroups，仅为 localSizeX 是 32 倍数的 GEMM pipeline 设置 REQUIRE_FULL_SUBGROUPS，比较实际机器码；保持宿主设备契约原样。
+运行 `20261007-214238-codegen9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-059](experiments/EXP-059-windows-gemm-full-subgroups.md)：本机报告 computeFullSubgroups=1；候选日志确认 8 个 GEMM 模块确实设置 flag=2。八份 .text 和完整 driver ELF（包括资源元数据）均逐字节相同，原模式 .text 也匹配 EXP-056 的当前基线。因此“减少编译器 EXEC/setup 工作”的机制在此配置未发生，判为 no_codegen_change，不保留。没有宣称测得零耗时差，也没有启动不必要的完整宿主性能批次；其它驱动或其它 pipeline 不在结论范围。
+下一步：实现相邻 K16 激活 tile 的成对布局，先用原图真实权重/输入的隔离算子对检查逻辑中间值、最终输出、输入/guard 及局部控制，再决定是否进入完整宿主。
 
 ## 本轮证据
 
@@ -22,7 +22,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-055：unproven；提交 91988095f7273c103d52e05e1adb8a416ae1d95a。
 - EXP-056：retained；提交 ee8868794e932b7904cc27e4894d00563102a1c7。
 - EXP-057：unproven；提交 22d8b4b8800db20ce81c9fa65fe7afd9fb046a96。
-- EXP-058：regressed；提交 本提交。
+- EXP-058：regressed；提交 612444f88d972ddd02dd41c7367f614821f8b903。
+- EXP-059：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
