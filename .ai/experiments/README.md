@@ -1,6 +1,6 @@
 # 优化实验
 
-已完成 44 轮离线探索；EXP-001/002/007/009/011/012/013/044 保留优化，其余轮次未建立可靠新收益。
+已完成 45 轮离线探索；EXP-001/002/007/009/011/012/013/044 保留优化，其余轮次未建立可靠新收益。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
 按用户要求暂缓游戏测试。
@@ -53,6 +53,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-042](EXP-042-windows-integer-image-fetch.md) | 图像 pre/post 整数取样 | 未保留；unproven | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-043](EXP-043-windows-persistent-parameter-reuse.md) | Persistent 参数加载复用 | 未保留；regressed | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-044](EXP-044-windows-attention-fragment-word-loads.md) | Attention 对齐 8 字节片段读取 | 保留；初测 -0.021130 ms，确认 -0.030290 ms | 两仓配方各 15 对序列、6 对输入与多遍切换完全一致 | 两仓 Windows shader 同步 | 用户暂缓 |
+| [EXP-045](EXP-045-windows-vector-layer-parameters.md) | Persistent 层参数向量读取 | 未保留；regressed | 见记录中的精确检查和未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
