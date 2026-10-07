@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261007-214238-codegen9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-053](experiments/EXP-053-windows-vit-token-chunk-locality.md)：256-token 将 2 个 dispatch 增至 8 个，局部平均慢 0.136186 ms；512-token 只拆成两段、4 个 dispatch，仍慢 0.029177 ms。两版各八组均变慢，明显高于对应控制差；未进入完整宿主，判为 regressed。
-下一步：检查矩阵乘法转置后的输出布局：用原 K 累加次序让收缩算子的残差和输出变为连续字节，严格验证生成代码及数值。
+运行 `20261007-214238-codegen9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-054](experiments/EXP-054-windows-vit-contract-transposed-mma.md)：第 1 版初测平均省 0.001032 ms，第 2 版省 0.001878 ms，两者组间方向混合且落入控制波动。第 2 版唯一反序确认 10.789616→10.793803 ms，平均慢 0.004187 ms；组差 0.003630/0.000180/-0.016370 ms。转置改善了局部读取形式但未建立完整路径收益，判为 unproven，不保留。
+下一步：研究 ViT 扩张 GEMM 的跨 K-chunk 预取，保持原 WMMA 消费顺序，以独立保存的当前原版作对照。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-051：unproven；提交 a38c212a0deab9bd9a281e7d27747c59a01d03e8。
 - EXP-052：regressed；提交 d6a98bb77880dbd5bb8d4ee33d0d3f2ff77720ff。
-- EXP-053：regressed；提交 本提交。
+- EXP-053：regressed；提交 79790de40444f462834b9bb4642172838efb821e。
+- EXP-054：unproven；提交 本提交。
 
 ## 继承状态与边界
 
