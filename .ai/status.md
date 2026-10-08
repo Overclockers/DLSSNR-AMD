@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-072](experiments/EXP-072-windows-preencode-common-rgb-branch.md)：初测慢 0.003371 ms，反序确认快 0.006390 ms；确认的同路径控制却快 0.010738 ms，两个控制组为 0.014217/0.007259 ms。方向变化且收益幅度无法与控制区分，关闭为 unproven，不保留。
-下一步：测试 C512 前馈第二级分片立即供第三级消费，减少同时存活的 FP32 中间累加器，同时保持每个输出的 K 顺序。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-073](experiments/EXP-073-windows-ffwd-middle-pair-stream.md)：完整 NR 平均慢 0.050444 ms，三组分别慢 0.057342/0.059159/0.034831 ms；对应控制最大绝对组差 0.011063 ms。寄存器明显减少仍不能转化为完整路径收益，提前关闭为 regressed，不追加确认。
+下一步：检查同一 group-major 工作组的四个 wave 读取相同 Q0 权重，测试一次协作加载到 LDS 并保留尾部通用路径。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-069：regressed；提交 d5c5ffd2b82787db629453d46c51572ebbce7083。
 - EXP-070：unproven；提交 ce870a06b97375159d58470ae6414fe09c351265。
 - EXP-071：mechanism_not_realized；提交 d5335bb34fd5f11e5490cc0eb0d2f1626ae7ab20。
-- EXP-072：unproven；提交 本提交。
+- EXP-072：unproven；提交 2b52db0a331a4648a1b68903f64956d803523b03。
+- EXP-073：regressed；提交 本提交。
 
 ## 继承状态与边界
 
