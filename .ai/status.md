@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-130553-swin9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-084](experiments/EXP-084-windows-swin-probability-denominator-bound.md)：初筛平均慢 0.002931 ms，三组均慢，处于同路径控制最大绝对组差 0.006525 ms 内。唯一反序确认平均快 0.001806 ms，各组节省 0.000715/-0.000760/0.005465 ms，方向混合，确认控制组差 -0.000664/0.001472 ms。未建立可重复的完整路径收益，关闭为 unproven。范围证明和静态指令减少不构成保留依据。
-下一步：检查六个 persistent Swin 内核的零加原子轮询：Windows 当前 ISA 使用 device-scope atomic OR；测试显式 device/acquire atomicLoad，保留写入、发布屏障、队列和 epoch，并检查循环内的真实加载及可见性。
+运行 `20261008-130553-swin9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-085](experiments/EXP-085-windows-persistent-atomic-poll-loads.md)：初筛平均节省 0.005565 ms，各组 0.012925/-0.000483/0.004254 ms，控制组差 0.002023/0.002569 ms。唯一反序确认平均增加 0.004978 ms，三组节省 -0.014783/-0.000101/-0.000049 ms，确认控制 0.004423/-0.001069 ms。两批方向相反，未建立可重复完整路径收益，关闭为 unproven；没有追加第三次测量或采用仅凭指令类型推断的收益。
+下一步：最后一项研究 ViT attention 的完整键块循环与尾块分离：当前 ISA 每轮分支合流有大量 context 寄存器复制。按原顺序执行所有完整 K64 块，再执行至多一个原尾块，保留原 half 归约、FP8 概率与全部 MMA。C256 单角落在目标每内核仅 8/1596 个窗口，未实施。
 
 ## 本轮证据
 
@@ -22,7 +22,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-081：regressed；提交 14f72701d0f542586582924202b9df6a9b8cf352。
 - EXP-082：regressed；提交 124e3fc76898cb090bc5b97fb975e2048a81ac57。
 - EXP-083：regressed；提交 db6a1027544578740d3faf97d424aea5d46d2c0f。
-- EXP-084：unproven；提交 本提交。
+- EXP-084：unproven；提交 70ce123af07ddf83eafbefb2e5489948fcf97ac1。
+- EXP-085：unproven；提交 本提交。
 
 ## 继承状态与边界
 
