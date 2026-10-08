@@ -10,6 +10,14 @@ Optional quality-reducing experiments must follow `.ai/decisions.md`: independen
 off by default, with the original path restored when disabled. The default path retains
 the existing precision floor. Machine-specific paths belong only in ignored `.ai/local/`.
 
+## Host Repository Branch
+
+All changes to the external `dlss-5-amd-project` repository made for this project
+must use `customer-mochi-backed`, not `main`. Before editing or committing host
+files, verify that the target checkout is on `customer-mochi-backed`.
+Do not merge these custom Mochizuki changes into host `main` or move host `main`
+without an explicit user instruction.
+
 ## Project Structure & Module Organization
 
 `linux/` is the reference implementation; `windows/` is an intentionally separate copy with AMD Windows driver adaptations. Apply shared fixes deliberately to both; keep platform workarounds local.
