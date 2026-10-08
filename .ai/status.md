@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
-最近完成 [EXP-071](experiments/EXP-071-windows-input-lift-weight-reuse.md)：显式权重复用没有减少驱动实际读取，基线已实现相同加载数量，原定机制未实现。提前关闭为 mechanism_not_realized；没有做完整宿主 A/B，不宣称这些调度差异绝对没有影响。三帧诊断与两次三帧正确性回读不作为性能证据。
-下一步：检查融合输入编码的三个 RGB 分支能否合并常见路径，先逐位验证 FP32 编码函数与边界值。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
+最近完成 [EXP-072](experiments/EXP-072-windows-preencode-common-rgb-branch.md)：初测慢 0.003371 ms，反序确认快 0.006390 ms；确认的同路径控制却快 0.010738 ms，两个控制组为 0.014217/0.007259 ms。方向变化且收益幅度无法与控制区分，关闭为 unproven，不保留。
+下一步：测试 C512 前馈第二级分片立即供第三级消费，减少同时存活的 FP32 中间累加器，同时保持每个输出的 K 顺序。
 
 ## 本轮证据
 
@@ -20,7 +20,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-068：mechanism_not_realized；提交 0d8bb5b2970ccdd692e92704ed621181a37c191f。
 - EXP-069：regressed；提交 d5c5ffd2b82787db629453d46c51572ebbce7083。
 - EXP-070：unproven；提交 ce870a06b97375159d58470ae6414fe09c351265。
-- EXP-071：mechanism_not_realized；提交 本提交。
+- EXP-071：mechanism_not_realized；提交 d5335bb34fd5f11e5490cc0eb0d2f1626ae7ab20。
+- EXP-072：unproven；提交 本提交。
 
 ## 继承状态与边界
 
