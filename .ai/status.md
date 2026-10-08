@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-073](experiments/EXP-073-windows-ffwd-middle-pair-stream.md)：完整 NR 平均慢 0.050444 ms，三组分别慢 0.057342/0.059159/0.034831 ms；对应控制最大绝对组差 0.011063 ms。寄存器明显减少仍不能转化为完整路径收益，提前关闭为 regressed，不追加确认。
-下一步：检查同一 group-major 工作组的四个 wave 读取相同 Q0 权重，测试一次协作加载到 LDS 并保留尾部通用路径。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-074](experiments/EXP-074-windows-ffwd-cooperative-q0-weights.md)：完整 NR 三组稳定变慢，平均增加 0.034661 ms；各组慢 0.034748/0.035293/0.033941 ms，控制最大绝对组差 0.007016 ms。额外 LDS、同步和回退控制未形成净收益，关闭为 regressed，不追加确认。
+下一步：最后一项根据实际 ISA 的逐分量 half 激活 clamp，测试无运行时分支的位域限幅；先穷举全部 half 值及 NaN/Inf/有符号零语义。
 
 ## 本轮证据
 
@@ -22,7 +22,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-070：unproven；提交 ce870a06b97375159d58470ae6414fe09c351265。
 - EXP-071：mechanism_not_realized；提交 d5335bb34fd5f11e5490cc0eb0d2f1626ae7ab20。
 - EXP-072：unproven；提交 2b52db0a331a4648a1b68903f64956d803523b03。
-- EXP-073：regressed；提交 本提交。
+- EXP-073：regressed；提交 f2cc18878a3500fe68a227fb95397fb0c7738d43。
+- EXP-074：regressed；提交 本提交。
 
 ## 继承状态与边界
 
