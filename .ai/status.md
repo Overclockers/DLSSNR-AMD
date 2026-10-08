@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-130553-swin9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-078](experiments/EXP-078-windows-input-feature-subgroup-exchange.md)：完整路径初测平均慢 0.001816 ms，唯一反序确认平均慢 0.001413 ms；确认各组节省 0.006078/-0.003491/-0.006824 ms。两批均值无收益、组间方向不一致，且确认控制已有约 0.013623 ms 的组差。关闭为 unproven，不保留；资源减少没有建立完整 NR 性能收益。
-下一步：审计 EXP-061 后剩余的 lin/(2*gy)：对 power-of-two span 使用严格整数移位，非适用网格保留原除法，证明所有最终坐标和任务序不变。
+运行 `20261008-130553-swin9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-079](experiments/EXP-079-windows-gemm-remap-power-of-two-span.md)：初测三组均慢，平均增加 0.010162 ms；唯一反序确认三组变快，平均节省 0.011543 ms。方向随顺序翻转，无法建立可重复完整 NR 收益，关闭为 unproven，不保留，也不追加候选测量。
+下一步：使用完全相同的保留基线检查更充分的统一预热及同路径控制，作为不占额度的测量方法 discovery；随后继续 Swin 残差增益读取等新假设。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-076：retained；提交 a5506eb6d51da060055d65f0527d1a45b2aec430。
 - EXP-077：unproven；提交 8c292bedbd8857d934b44393078eba322bc85fad。
-- EXP-078：unproven；提交 本提交。
+- EXP-078：unproven；提交 7aa5dd6b5d44a54b0b0d14695be214cfec11da3d。
+- EXP-079：unproven；提交 本提交。
 
 ## 继承状态与边界
 
