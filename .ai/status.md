@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-005048-lossless9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-113](experiments/EXP-113-windows-ffwd-workgroup-weight-pairs.md)：regressed，不保留。初测完整路径 10.990525→11.015209 ms，慢 0.024684 ms，三组均慢：0.005835/0.030051/0.038165 ms；同路径控制组差为 -0.001385/-0.012784 ms。后两组回退明显大于同期控制组差，筛选没有出现收益，直接淘汰且不扩大昂贵验证或追加确认。这是本次目标配置的筛选结论，不外推所有尺寸或机器。
-下一步：审计网络内部资源依赖，尝试把纯缓冲区步骤之间的全局内存屏障限定到 activation arena，保留原阶段与访问掩码。
+运行 `20261009-005048-lossless9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-114](experiments/EXP-114-windows-network-activation-buffer-barriers.md)：unproven，不保留。初测 10.985064→10.984763 ms，只省 0.000302 ms，组差 -0.003603/+0.000328/+0.004181 ms，与同期控制重叠。唯一反序确认 11.020494→11.027190 ms，慢 0.006696 ms，三组仍正负混合，未建立完整路径稳定收益。保留全部批次，不追加确认。
+下一步：测试 packed compose 尾部内存依赖是否可由既有 frame image 屏障承担，同时保留 COMPUTE→COMPUTE 执行屏障。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-110：mechanism_not_realized；提交 138077435197a33fdaa2653c2da81090be729d65。
 - EXP-111：unproven；提交 af5c4ae0642a661929ac3d978d95ed5958e3c096。
 - EXP-112：unproven；提交 7d98351cc59508b79b43f6a5aa86e394fa6a7718。
-- EXP-113：regressed；提交 本提交。
+- EXP-113：regressed；提交 313d157abd830a84e4b71009141b427710c0a5a8。
+- EXP-114：unproven；提交 本提交。
 
 ## 继承状态与边界
 
