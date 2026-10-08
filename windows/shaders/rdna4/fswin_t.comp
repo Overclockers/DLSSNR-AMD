@@ -2677,6 +2677,18 @@ NR_FRAG_ACC nr_swin_bias_seed(uint head, uint query, uint key, uint tok0) {
 shared NrClaimSlot { uint nr_claim_shared; };
 #endif
 void main() {
+#if NR_POST_WINDOW_CULL
+#if !defined(NR_FUSED_IMAGE_OUTPUT) || NR_PERSIST || NR_DUMP || NR_LDS_PAD > 0
+#error "Window culling requires the independent image post path"
+#endif
+    // The original epilogue writes nothing for these entire 8x8 windows.
+    // This group-uniform test precedes every shared-memory operation.
+    const ivec2 nr_window_min = ivec2(8 * int(gl_WorkGroupID.x) + 4 * pc.shift,
+                                     8 * int(gl_WorkGroupID.y) + 4 * pc.shift_y);
+    const ivec2 nr_output_extent = imageSize(nr_out0);
+    if (any(greaterThanEqual(nr_window_min, nr_output_extent)) ||
+        any(lessThanEqual(nr_window_min + ivec2(8), ivec2(0)))) return;
+#endif
 #if NR_LDS_PAD > 0
     // Same never-taken shape the coherent-access keep-alive uses - but a store
     // alone is not enough: an LDS array that is never *read* is dead and the
