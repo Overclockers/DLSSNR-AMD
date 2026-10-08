@@ -2215,6 +2215,21 @@
         NR_LOAD_B(cq[m][k], lds_context,
                   (tok0+uint(m)*16u)*uint(NR_C)+uint(k)*16u, uint(NR_C));
 #endif
+// A pair of query tiles keeps fewer independent projection accumulators live.
+// Keep each tile's ascending K reduction and both N rows together. The pooled
+// stores reuse only m=0 LDS after both rows have consumed their residuals;
+// residuals for the later m=2,3 pair and other heads remain disjoint.
+#if NR_PROJECT_BATCH
+#if !NR_HWAVES || NR_MF != 4 || NR_PROJECT_BATCH != 2 || !defined(NR_DS_PROJECT) || !(NR_PACKED_DENSE & 4)
+#error Projection batching requires four query tiles split in pairs
+#endif
+#define NR_PM_START nr_pm
+#define NR_PM_END (nr_pm + NR_PROJECT_BATCH)
+    for (int nr_pm=0; nr_pm<NR_MF; nr_pm+=NR_PROJECT_BATCH) {
+#else
+#define NR_PM_START 0
+#define NR_PM_END NR_MF
+#endif
     // ---- stage 6: the output projection and the attention skip ------------
     NR_PROF_STAGE(6)
 #if NR_IMGOUT_REGS
@@ -2288,7 +2303,7 @@
     NR_ACCF nr_project_acc[NR_DF][NR_MF];
     for(int p=0;p<NR_DF;++p) {
         const int n=nrhw_h*NR_DF+p;
-        for(int m=0;m<NR_MF;++m) NR_MGA(m) {
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_MGA(m) {
             NR_FRAG_B yr;
             NR_LOAD_B(yr,lds_x, NR_LXB_ uint(m*NR_CF+n)*256u+NR_OPQ(80u),16u);
             for(int c=0;c<8;c+=2) {
@@ -2306,12 +2321,12 @@
     }
     for(int k=0;k<NR_CF;++k) {
         NR_FRAG_B ctx[NR_MF];
-        for(int m=0;m<NR_MF;++m)
+        for (int m = NR_PM_START; m < NR_PM_END; ++m)
             NR_LOAD_B(ctx[m],lds_y, NR_LXB_ uint(m*NR_CF+k)*256u+NR_OPQ(64u),16u);
         NR_OPA wf0,wf1;
         NR_WEIGHT_PAIR_S(wf0,wf1,pc.op_off,uint(nrhw_h*NR_DF),uint(k),uint(NR_CF),32)
-        for(int m=0;m<NR_MF;++m) NR_MGA(m) NR_MMA(nr_project_acc[0][m],wf0,ctx[m]);
-        for(int m=0;m<NR_MF;++m) NR_MGA(m) NR_MMA(nr_project_acc[1][m],wf1,ctx[m]);
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_MGA(m) NR_MMA(nr_project_acc[0][m],wf0,ctx[m]);
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_MGA(m) NR_MMA(nr_project_acc[1][m],wf1,ctx[m]);
     }
 #endif
 #if NR_HWAVES
@@ -2324,7 +2339,7 @@
         // bytes, same `float()` widening, no register held across the
         // attention.
         NR_FRAG_B yqr[NR_MF];
-        for (int m = 0; m < NR_MF; ++m)
+        for (int m = NR_PM_START; m < NR_PM_END; ++m)
             NR_LOAD_B(yqr[m], lds_x, NR_LXB_
                       uint(m * NR_CF + n) * 256u + NR_OPQ(80u), 16u);
 #else
@@ -2332,13 +2347,13 @@
 #endif
 #if (NR_PACKED_DENSE & 4) && NR_HWAVES
         NR_ACCF a[NR_MF];
-        for(int m=0;m<NR_MF;++m) a[m]=nr_project_acc[nn][m];
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) a[m]=nr_project_acc[nn][m];
 #else
         NR_ACCF a[NR_MF];
-        for (int m = 0; m < NR_MF; ++m) a[m] = NR_ACCZERO;
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) a[m] = NR_ACCZERO;
 #if NR_PTX_ACC
 #if NR_NATIVE_RESIDUAL
-        for(int m=0;m<NR_MF;++m) for(int c=0;c<8;c+=2) {
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) for(int c=0;c<8;c+=2) {
             const uint off=pc.ars_off+uint(n)*16u+rbase+uint(c);
 #if NR_RESIDUAL_F32
             const vec2 residual=vec2(NR_Y(m,n,c),NR_Y(m,n,c+1))*vec2(wgt_f32[off],wgt_f32[off+1u]);
@@ -2354,14 +2369,14 @@
 #endif
         }
 #else
-        for(int m=0;m<NR_MF;++m) for(int c=0;c<8;++c)
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) for(int c=0;c<8;++c)
             a[m][c]=nr_round_f16(wgt_f32[pc.ars_off+uint(n)*16u+rbase+uint(c)]*NR_Y(m,n,c));
 #endif
 #endif
         for (int k = 0; k < NR_CF; ++k) {
 #if NR_HWAVES
             NR_FRAG_B cqk[NR_MF];
-            for (int m = 0; m < NR_MF; ++m)
+            for (int m = NR_PM_START; m < NR_PM_END; ++m)
                 NR_LOAD_B(cqk[m], lds_y, NR_LXB_
                           uint(m * NR_CF + k) * 256u + NR_OPQ(64u + uint(nn)), 16u);
 #define NR_CQ(m, k) cqk[m]
@@ -2376,9 +2391,9 @@
             NR_C32_WEIGHT(wf,pc.op_off,uint(n),uint(k),uint(NR_CF));
 #define NR_WPF_WF_OP wf
 #endif
-            for (int m = 0; m < NR_MF; ++m) NR_MGA(m) NR_MMA(a[m], NR_WPF_WF_OP, NR_CQ(m, k));
+            for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_MGA(m) NR_MMA(a[m], NR_WPF_WF_OP, NR_CQ(m, k));
             if (NR_ACC_F16 > 0 && (k + 1) % NR_ACC_F16 == 0)
-                for (int m = 0; m < NR_MF; ++m) NR_RND(a[m])
+                for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_RND(a[m])
         }
 #endif
         // Again element-wise: `ars` is per accumulator row and `y` has been in
@@ -2389,7 +2404,7 @@
         // partner arrives. One fragment, not the whole 64x32 block.
         NR_FRAG_ACC16 nr_io_even;
 #endif
-        for (int m = 0; m < NR_MF; ++m) NR_MGA(m) {
+        for (int m = NR_PM_START; m < NR_PM_END; ++m) NR_MGA(m) {
 #ifdef NR_FINAL_F16
             // The fused post block feeds this FP16 value directly to its RGB
             // projection; an FP8 store here would add a conversion absent in PTX.
@@ -2808,6 +2823,11 @@
 #endif
         }
     }
+#if NR_PROJECT_BATCH
+    }
+#endif
+#undef NR_PM_START
+#undef NR_PM_END
 #ifdef NR_DS_PROJECT
     // The downsample's learned projection on the window's 16 pooled
     // pixels, out^T[n][px] = W[n][k] . pooled^T[k][px] - the same e4m3 inputs,
