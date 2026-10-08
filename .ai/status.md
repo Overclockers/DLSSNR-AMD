@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-068](experiments/EXP-068-windows-persistent-activation-word-loads.md)：所需机制未实现：原路径已由驱动合并成相同宽度的 load。候选只把对齐掩码 -4 改为 -8，实际地址一致，指令顺序、数量、加载宽度及依赖均不变。提前关闭为 mechanism_not_realized，不进行完整宿主性能批次，不作零收益的测量结论。
-下一步：沿这份新证据检查如何在保持地址完全一致时将 uniform 基址和 lane 偏移分别缩放，消除重复的向量对齐掩码。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-069](experiments/EXP-069-windows-persistent-scaled-activation-address.md)：完整 NR 三组均变慢，平均增加 0.027968 ms；对应控制最大绝对组差仅 0.001287 ms。地址代数化简未改善驱动调度，关闭为 regressed，未使用追加确认。
+下一步：转向 image post 的独立原图采样，测试提前发出纹理读取能否隐藏末段等待。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-066：regressed；提交 8ca1b451ddc0433e98771f360c3bf06a34c48de4。
 - EXP-067：unproven；提交 6e509c544ec03d53ea957f07793b12a22a7e86f7。
-- EXP-068：mechanism_not_realized；提交 本提交。
+- EXP-068：mechanism_not_realized；提交 0d8bb5b2970ccdd692e92704ed621181a37c191f。
+- EXP-069：regressed；提交 本提交。
 
 ## 继承状态与边界
 
