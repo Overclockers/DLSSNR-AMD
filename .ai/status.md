@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-005048-lossless9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-114](experiments/EXP-114-windows-network-activation-buffer-barriers.md)：unproven，不保留。初测 10.985064→10.984763 ms，只省 0.000302 ms，组差 -0.003603/+0.000328/+0.004181 ms，与同期控制重叠。唯一反序确认 11.020494→11.027190 ms，慢 0.006696 ms，三组仍正负混合，未建立完整路径稳定收益。保留全部批次，不追加确认。
-下一步：测试 packed compose 尾部内存依赖是否可由既有 frame image 屏障承担，同时保留 COMPUTE→COMPUTE 执行屏障。
+运行 `20261009-005048-lossless9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-115](experiments/EXP-115-windows-packed-compose-memory-dependency.md)：unproven，不保留。首轮完整路径 10.980515→10.969839 ms，表面省 0.010676 ms，但第三组反向。唯一反序确认 11.008103→11.007965 ms，仅省 0.000138 ms，组差 -0.006776/+0.010741/-0.003551 ms，首轮收益未复现。保留全部样本、关闭该假设，不根据单个有利组保留，也不追加第三轮。
+下一步：最后一次尝试：在 ViT 完整键块中先计算两组独立 logits，再按原顺序执行各自的概率、分母和 context，尾块仍用原路径。
 
 ## 本轮证据
 
@@ -22,7 +22,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-111：unproven；提交 af5c4ae0642a661929ac3d978d95ed5958e3c096。
 - EXP-112：unproven；提交 7d98351cc59508b79b43f6a5aa86e394fa6a7718。
 - EXP-113：regressed；提交 313d157abd830a84e4b71009141b427710c0a5a8。
-- EXP-114：unproven；提交 本提交。
+- EXP-114：unproven；提交 eec66af199b11ab3377cf5a2b0ac2dae008ae2ca。
+- EXP-115：unproven；提交 本提交。
 
 ## 继承状态与边界
 
