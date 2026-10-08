@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-193306-lossless9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
-最近完成 [EXP-101](experiments/EXP-101-windows-attention-final-head-barrier.md)：初测表面节省 0.162933 ms，但末组参考批次出现 2.18 ms 帧间标准差，同路径组差达 0.929871 ms；唯一反序确认平均慢 0.161600 ms，其中候选首批同样出现约 2.21 ms 帧间标准差。确认控制组差 0.021371/0.014074 ms；确认另外两组也未快于基线。未建立可靠完整路径收益，unproven，不保留，不删除异常批次。
-下一步：继续剩余五次额度，优先测试 C32 概率产生后立即按原顺序更新分母部分和的调度；保留所有数值边界。
+运行 `20261008-193306-lossless9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
+最近完成 [EXP-102](experiments/EXP-102-windows-c32-probability-partial-scheduling.md)：编译器已把原来的部分和安排为相同机器指令，本原型没有改变目标执行代码，no_codegen_change，不保留。不从未完成的 A/B 批次提取收益，不追加变体或确认。
+下一步：继续剩余四次额度，检查 decoder nearest upsample 的四个输出像素是否可以共享同一源投影读取。
 
 ## 本轮证据
 
@@ -19,7 +19,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-098：regressed；提交 7d789181cea395ad707388786c470434c143d224。
 - EXP-099：unproven；提交 e56cd28c0abf493d4ac542ce5d2dcb35b9d34fe8。
 - EXP-100：regressed；提交 57f98b78f45cb9f4830cfef3341e0a3dff42f66a。
-- EXP-101：unproven；提交 本提交。
+- EXP-101：unproven；提交 159441cf8e145c6d01c6114d3fdc43195f261d5c。
+- EXP-102：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
