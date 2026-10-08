@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-130553-swin9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-083](experiments/EXP-083-windows-post-interior-blend-addresses.md)：完整 NR 三组初筛全部变慢，平均增加 0.007365 ms，分别增加 0.005477/0.006407/0.010212 ms；同路径控制最大绝对组差 0.004395 ms。本次初筛不支持保留，关闭为 regressed，不追加确认；不将该结果外推为所有形状上的绝对无收益。
-下一步：穷举 softmax half 指数变换的范围，并证明原分母归约始终高于保护下限，再测试移除这项恒等 max 是否减少完整路径成本。
+运行 `20261008-130553-swin9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-084](experiments/EXP-084-windows-swin-probability-denominator-bound.md)：初筛平均慢 0.002931 ms，三组均慢，处于同路径控制最大绝对组差 0.006525 ms 内。唯一反序确认平均快 0.001806 ms，各组节省 0.000715/-0.000760/0.005465 ms，方向混合，确认控制组差 -0.000664/0.001472 ms。未建立可重复的完整路径收益，关闭为 unproven。范围证明和静态指令减少不构成保留依据。
+下一步：检查六个 persistent Swin 内核的零加原子轮询：Windows 当前 ISA 使用 device-scope atomic OR；测试显式 device/acquire atomicLoad，保留写入、发布屏障、队列和 epoch，并检查循环内的真实加载及可见性。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-079：unproven；提交 29f2a2fc9cb8930d0380392d2472b6efe6d7168e。
 - EXP-081：regressed；提交 14f72701d0f542586582924202b9df6a9b8cf352。
 - EXP-082：regressed；提交 124e3fc76898cb090bc5b97fb975e2048a81ac57。
-- EXP-083：regressed；提交 本提交。
+- EXP-083：regressed；提交 db6a1027544578740d3faf97d424aea5d46d2c0f。
+- EXP-084：unproven；提交 本提交。
 
 ## 继承状态与边界
 
