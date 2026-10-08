@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-005048-lossless9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-110](experiments/EXP-110-windows-c32-qkv-weight-fragment-cache.md)：mechanism_not_realized，不保留。预先规定的“减少权重读取”机制未实现，因此不为零散调度差异扩大验收或追加确认。已启动的一轮 ABBA 和控制完整保存：表面省 0.165048 ms，但第一组受基线尖峰主导，后两组正负混合；同路径控制差 -0.244614 ms，同样有尖峰。这些数据不能证明提速，也没有据此保留候选。
-下一步：把 fused input 的原 GPU 有序控制参数更新移到更早的位置，检查能否减少网络开始前的传输等待。
+运行 `20261009-005048-lossless9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-111](experiments/EXP-111-windows-early-encode-control-update.md)：unproven，不保留。首轮表面省 0.033273 ms，三组为 +0.091495/-0.008611/+0.016934 ms，第一组受基线尖峰影响。唯一反序确认 10.997583→10.998369 ms，慢 0.000786 ms，组差仍正负混合，未复现可稳定区分于控制噪声的收益。所有批次保存，不删异常帧、不再追加确认。
+下一步：检查最终 attention/QKV 输出转换能否在保持 half 舍入及归约次序的前提下合并为四分量转换。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-107：no_codegen_change；提交 875f2c28789687b7c835fd2b63a8f885333a3045。
 - EXP-108：unproven；提交 16e056a67b60c6f059754ca0ebbbc834ca89c3aa。
 - EXP-109：unproven；提交 5a2f791b7bdad8ec225bf5ee147eedcfd419c047。
-- EXP-110：mechanism_not_realized；提交 本提交。
+- EXP-110：mechanism_not_realized；提交 138077435197a33fdaa2653c2da81090be729d65。
+- EXP-111：unproven；提交 本提交。
 
 ## 继承状态与边界
 
