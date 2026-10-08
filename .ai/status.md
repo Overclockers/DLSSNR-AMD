@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-130553-swin9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-079](experiments/EXP-079-windows-gemm-remap-power-of-two-span.md)：初测三组均慢，平均增加 0.010162 ms；唯一反序确认三组变快，平均节省 0.011543 ms。方向随顺序翻转，无法建立可重复完整 NR 收益，关闭为 unproven，不保留，也不追加候选测量。
-下一步：继续第 5/10 项 Swin 残差增益读取；新假设 A/B 及反序确认采用 EXP-080 的 4000 帧统一预热，原每臂 100/200 与控制保持。
+运行 `20261008-130553-swin9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-081](experiments/EXP-081-windows-swin-wave-uniform-residual-gains.md)：完整 NR 三组均明确变慢，平均增加 0.052788 ms，分别增加 0.045640/0.059422/0.053301 ms；同路径控制最大绝对组差 0.003611 ms。关闭为 regressed，不保留、不追加确认。统一读取引入的大量标量加载和选择指令没有形成净收益。
+下一步：测试输入投影权重在两 wave 之间的协作缓存，利用已有 feature barrier 发布，不增加 EXP-074 中那类额外同步。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-076：retained；提交 a5506eb6d51da060055d65f0527d1a45b2aec430。
 - EXP-077：unproven；提交 8c292bedbd8857d934b44393078eba322bc85fad。
 - EXP-078：unproven；提交 7aa5dd6b5d44a54b0b0d14695be214cfec11da3d。
-- EXP-079：unproven；提交 本提交。
+- EXP-079：unproven；提交 29f2a2fc9cb8930d0380392d2472b6efe6d7168e。
+- EXP-081：regressed；提交 本提交。
 
 ## 继承状态与边界
 
@@ -30,5 +31,3 @@ EXP-028 只有最终 detailed decoder 结果可用于指令研究；C256 DS 样�
 严格保持数值、权重、归约和行为；游戏测量继续暂缓，无安装、部署、打包、发布或推送。
 恢复发布前仍需核对 EXP-012/015 的 runtime shader 分发/卸载闭包。
 宿主修改只使用 customer-mochi-backed；本轮没有关机或后台任务授权。
-
-EXP-080 为不占额度的测量 discovery：8 批统一预热后的同路径控制首末差 -0.002336 ms，组差 0.007521/-0.005281 ms；没有 NR 优化或噪声固定阈值结论。
