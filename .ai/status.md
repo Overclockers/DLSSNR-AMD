@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-069](experiments/EXP-069-windows-persistent-scaled-activation-address.md)：完整 NR 三组均变慢，平均增加 0.027968 ms；对应控制最大绝对组差仅 0.001287 ms。地址代数化简未改善驱动调度，关闭为 regressed，未使用追加确认。
-下一步：转向 image post 的独立原图采样，测试提前发出纹理读取能否隐藏末段等待。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-070](experiments/EXP-070-windows-post-original-texture-lookahead.md)：初测慢 0.017939 ms，但对应控制也慢 0.016673 ms，因此使用唯一反序确认。确认平均慢 0.000017 ms，各组为 +0.013772/-0.002306/-0.011518 ms；同次控制约 +0.002171 ms。没有稳定收益，关闭为 unproven。
+下一步：检查 persistent Swin 残差缩放的相邻 FP32 权重能否用显式 float2 读取减少实际访存指令。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-066：regressed；提交 8ca1b451ddc0433e98771f360c3bf06a34c48de4。
 - EXP-067：unproven；提交 6e509c544ec03d53ea957f07793b12a22a7e86f7。
 - EXP-068：mechanism_not_realized；提交 0d8bb5b2970ccdd692e92704ed621181a37c191f。
-- EXP-069：regressed；提交 本提交。
+- EXP-069：regressed；提交 d5c5ffd2b82787db629453d46c51572ebbce7083。
+- EXP-070：unproven；提交 本提交。
 
 ## 继承状态与边界
 
