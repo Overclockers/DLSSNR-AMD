@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 2，本提交完成后关闭 2。
-最近完成 [EXP-067](experiments/EXP-067-windows-persistent-bounded-window-division.md)：初测平均慢 0.004920 ms，唯一反序确认平均慢 0.000282 ms；组间方向不一致，确认控制的组差约 0.021–0.023 ms。没有可重复、可与控制波动区分的收益，关闭为 unproven，不保留原型。
-下一步：将 persistent Swin 的两个相邻 coherent 32 位激活读取合并为同一 8 字节视图，核验实际指令与逐字节输出。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
+最近完成 [EXP-068](experiments/EXP-068-windows-persistent-activation-word-loads.md)：所需机制未实现：原路径已由驱动合并成相同宽度的 load。候选只把对齐掩码 -4 改为 -8，实际地址一致，指令顺序、数量、加载宽度及依赖均不变。提前关闭为 mechanism_not_realized，不进行完整宿主性能批次，不作零收益的测量结论。
+下一步：沿这份新证据检查如何在保持地址完全一致时将 uniform 基址和 lane 偏移分别缩放，消除重复的向量对齐掩码。
 
 ## 本轮证据
 
@@ -16,7 +16,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 本轮保留数量：0；历史收益不重复计入本轮。
 
 - EXP-066：regressed；提交 8ca1b451ddc0433e98771f360c3bf06a34c48de4。
-- EXP-067：unproven；提交 本提交。
+- EXP-067：unproven；提交 6e509c544ec03d53ea957f07793b12a22a7e86f7。
+- EXP-068：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
