@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-005048-lossless9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-109](experiments/EXP-109-windows-input-uniform-feature-injection.md)：unproven，两版均不保留。第一版均值看似省 0.015319 ms，但三组正负混合；第二版初测省 0.037437 ms，小于同路径均差 0.140572 ms。第二版唯一反序确认反而慢 0.127937 ms，控制差 -0.157817 ms，仍有明显尖峰与正负组混合。全部批次保留，不以机器码缩减或最佳组宣称完整路径提速。
-下一步：检查 C32 QKV 的小型权重片段能否在 query fragment 之间复用，保持每份累加器原 K 次序。
+运行 `20261009-005048-lossless9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-110](experiments/EXP-110-windows-c32-qkv-weight-fragment-cache.md)：mechanism_not_realized，不保留。预先规定的“减少权重读取”机制未实现，因此不为零散调度差异扩大验收或追加确认。已启动的一轮 ABBA 和控制完整保存：表面省 0.165048 ms，但第一组受基线尖峰主导，后两组正负混合；同路径控制差 -0.244614 ms，同样有尖峰。这些数据不能证明提速，也没有据此保留候选。
+下一步：把 fused input 的原 GPU 有序控制参数更新移到更早的位置，检查能否减少网络开始前的传输等待。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-107：no_codegen_change；提交 875f2c28789687b7c835fd2b63a8f885333a3045。
 - EXP-108：unproven；提交 16e056a67b60c6f059754ca0ebbbc834ca89c3aa。
-- EXP-109：unproven；提交 本提交。
+- EXP-109：unproven；提交 5a2f791b7bdad8ec225bf5ee147eedcfd419c047。
+- EXP-110：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
