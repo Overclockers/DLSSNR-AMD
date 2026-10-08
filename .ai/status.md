@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-130553-swin9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
-最近完成 [EXP-081](experiments/EXP-081-windows-swin-wave-uniform-residual-gains.md)：完整 NR 三组均明确变慢，平均增加 0.052788 ms，分别增加 0.045640/0.059422/0.053301 ms；同路径控制最大绝对组差 0.003611 ms。关闭为 regressed，不保留、不追加确认。统一读取引入的大量标量加载和选择指令没有形成净收益。
-下一步：测试输入投影权重在两 wave 之间的协作缓存，利用已有 feature barrier 发布，不增加 EXP-074 中那类额外同步。
+运行 `20261008-130553-swin9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
+最近完成 [EXP-082](experiments/EXP-082-windows-input-lift-shared-weight-cache.md)：完整 NR 三组均变慢，平均增加 0.012826 ms，分别增加 0.015475/0.012950/0.010053 ms；同路径控制最大绝对组差 0.004969 ms。关闭为 regressed，不保留、不追加确认。即使复用已有屏障，额外 LDS 与读取/存储组织仍未形成净收益。
+下一步：审计 image post 的内部窗口坐标，对已证明完整在界内的窗口消除重复整数 clamp/min，边缘和不规则输入保留原公式。
 
 ## 本轮证据
 
@@ -19,7 +19,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-077：unproven；提交 8c292bedbd8857d934b44393078eba322bc85fad。
 - EXP-078：unproven；提交 7aa5dd6b5d44a54b0b0d14695be214cfec11da3d。
 - EXP-079：unproven；提交 29f2a2fc9cb8930d0380392d2472b6efe6d7168e。
-- EXP-081：regressed；提交 本提交。
+- EXP-081：regressed；提交 14f72701d0f542586582924202b9df6a9b8cf352。
+- EXP-082：regressed；提交 本提交。
 
 ## 继承状态与边界
 
