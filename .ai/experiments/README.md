@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-111；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-112；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088 保留优化，其余轮次未建立可靠新收益。
 另完成 EXP-050：当前组合对指定上游的四分辨率直接验收，不计入优化假设预算。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
@@ -121,6 +121,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-109](EXP-109-windows-input-uniform-feature-injection.md) | 输入层统一特征直接构造矩阵片段 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-110](EXP-110-windows-c32-qkv-weight-fragment-cache.md) | C32 QKV 的权重片段寄存器复用 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-111](EXP-111-windows-early-encode-control-update.md) | 融合输入控制参数的 GPU 更新提前录制 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-112](EXP-112-windows-attention-output-quad-conversion.md) | Attention 与 QKV 最终输出的四分量量化 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
