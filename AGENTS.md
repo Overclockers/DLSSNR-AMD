@@ -10,6 +10,13 @@ Optional quality-reducing experiments must follow `.ai/decisions.md`: independen
 off by default, with the original path restored when disabled. The default path retains
 the existing precision floor. Machine-specific paths belong only in ignored `.ai/local/`.
 
+## Experiment Branch
+
+All experiments in `DLSSNR-AMD`, including implementation changes, discovery tools,
+and experiment records, must use `main-experiment`. Verify the target checkout before
+editing and again before committing, including when resuming older runs recorded on `main`.
+Do not advance `main` or merge experiments into it without an explicit user instruction.
+
 ## Host Repository Branch
 
 All changes to the external `dlss-5-amd-project` repository made for this project
