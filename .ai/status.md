@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-193306-lossless9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
-最近完成 [EXP-105](experiments/EXP-105-windows-vit-expand-weight-outer-mma.md)：初测完整路径 11.359819→11.491254 ms，平均慢 0.131436 ms；三组方向混合，同路径控制存在 -0.594449 ms 的组差。唯一反序确认 11.089438→11.102141 ms，平均慢 0.012703 ms，三组节省 -0.051810/-0.011283/+0.024984 ms；确认控制组差 -0.022762/+0.377152 ms。全部含尖峰批次均保留，无法建立稳定收益，判为 unproven，不保留。
-下一步：完成最后一次额度：研究 C32 mode-7 下采样池化将两个 y 邻居的 half 值合成一个 uint 交换，先验证舍入和机器码。
+运行 `20261008-193306-lossless9070xt`，上限 10；已启动 10，本提交完成后关闭 10。
+最近完成 [EXP-106](experiments/EXP-106-windows-c32-pool-packed-y-exchange.md)：两版都未通过事先规定的严格位一致性门槛，判为 correctness_failed，不保留。没有把 NaN 位差异放宽为可接受误差，也没有运行完整 NR 性能筛选或追加确认；本项没有可报告的省时数字。
+下一步：第十项提交完成后执行本轮最终身份、分支、提交和暂存区核验，以 budget_exhausted 结束本 run；新的实验需要新的明确预算。
 
 ## 本轮证据
 
@@ -23,7 +23,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-102：no_codegen_change；提交 2357a21c0fd3cbadd2f8d1ff4735ee170a7a1052。
 - EXP-103：unproven；提交 e0156cdc19eeb943e55c018398cf82a7f8d7a443。
 - EXP-104：unproven；提交 37aaf80b593fcbc9eb46aaac8277839bfd602432。
-- EXP-105：unproven；提交 本提交。
+- EXP-105：unproven；提交 3c3cadccaaa2d5c3ea4341821fef4f73ac6787e4。
+- EXP-106：correctness_failed；提交 本提交。
 
 ## 继承状态与边界
 
@@ -35,3 +36,9 @@ EXP-028 只有最终 detailed decoder 结果可用于指令研究；C256 DS 样�
 严格保持数值、权重、归约和行为；游戏测量继续暂缓，无安装、部署、打包、发布或推送。
 恢复发布前仍需核对 EXP-012/015 的 runtime shader 分发/卸载闭包。
 核心实验只使用 main-experiment，宿主修改只使用 customer-mochi-backed；本轮没有关机或后台任务授权。
+
+## 本轮停止条件
+
+本提交关闭第 10 项后，已启动/关闭/上限为 10/10/10，预算耗尽。
+停止原因为 budget_exhausted；最终提交与产物核验写入本机 ledger。
+本轮保留代码数量为 0；未保留原型均在忽略目录，无未提交实现改动或恢复需求。
