@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-115；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-116；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088 保留优化，其余轮次未建立可靠新收益。
 另完成 EXP-050：当前组合对指定上游的四分辨率直接验收，不计入优化假设预算。
 EXP-026/027 补齐队列、硬件计数器和 wave 驻留观测；代码缩减原型未建立可靠完整路径收益。
 EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C256 DS 样本；未做新性能 A/B。
@@ -125,6 +125,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-113](EXP-113-windows-ffwd-workgroup-weight-pairs.md) | C512 FFWD 相同权重组的工作组成对排列 | 未保留；regressed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-114](EXP-114-windows-network-activation-buffer-barriers.md) | 网络内部屏障限定到 activation buffer | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-115](EXP-115-windows-packed-compose-memory-dependency.md) | Packed compose 尾部重复内存依赖 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-116](EXP-116-windows-vit-full-chunk-logit-batching.md) | ViT 完整键块的独立 logits 分批计算 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
