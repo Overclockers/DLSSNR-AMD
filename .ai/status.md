@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261008-115341-shapes9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
-最近完成 [EXP-074](experiments/EXP-074-windows-ffwd-cooperative-q0-weights.md)：完整 NR 三组稳定变慢，平均增加 0.034661 ms；各组慢 0.034748/0.035293/0.033941 ms，控制最大绝对组差 0.007016 ms。额外 LDS、同步和回退控制未形成净收益，关闭为 regressed，不追加确认。
-下一步：最后一项根据实际 ISA 的逐分量 half 激活 clamp，测试无运行时分支的位域限幅；先穷举全部 half 值及 NaN/Inf/有符号零语义。
+运行 `20261008-115341-shapes9070xt`，上限 10；已启动 10，本提交完成后关闭 10。
+最近完成 [EXP-075](experiments/EXP-075-windows-ffwd-branchless-half-activation-clamp.md)：完整 NR 三组全部变慢，平均增加 0.042912 ms；各组慢 0.033909/0.046661/0.048167 ms，控制最大绝对组差 0.008202 ms。关闭为 regressed，不保留、不追加确认。该项完成后本轮已启动/关闭/上限为 10/10/10，停止原因为 budget_exhausted；全部尝试均无可保留的新收益。
+下一步：本轮预算耗尽，保存和核验全部记录。未来新运行可基于新鲜热点与因果证据选题，不直接重复这些已排除的地址、读取和缓存写法。
 
 ## 本轮证据
 
@@ -23,7 +23,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-071：mechanism_not_realized；提交 d5335bb34fd5f11e5490cc0eb0d2f1626ae7ab20。
 - EXP-072：unproven；提交 2b52db0a331a4648a1b68903f64956d803523b03。
 - EXP-073：regressed；提交 f2cc18878a3500fe68a227fb95397fb0c7738d43。
-- EXP-074：regressed；提交 本提交。
+- EXP-074：regressed；提交 52988c639edcedbf0a500d275b477969c11f36d9。
+- EXP-075：regressed；提交 本提交。
 
 ## 继承状态与边界
 
@@ -34,3 +35,9 @@ EXP-028 只有最终 detailed decoder 结果可用于指令研究；C256 DS 样�
 严格保持数值、权重、归约和行为；游戏测量继续暂缓，无安装、部署、打包、发布或推送。
 恢复发布前仍需核对 EXP-012/015 的 runtime shader 分发/卸载闭包。
 宿主修改只使用 customer-mochi-backed；本轮没有关机或后台任务授权。
+
+## 本轮停止条件
+
+本提交关闭第 10 项后，已启动/关闭/上限为 10/10/10，预算耗尽。
+停止原因为 budget_exhausted；最终提交与产物核验写入本机 ledger。
+本轮保留代码数量为 0；所有原型保存在忽略目录，无生产实现改动或恢复需求。
