@@ -1,12 +1,12 @@
 # 当前状态
 
-更新日期：2026-10-08（Asia/Hong_Kong）。
+更新日期：2026-10-09（Asia/Hong_Kong）。
 
 ## 当前工作
 
-运行 `20261008-193306-lossless9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
-最近完成 [EXP-102](experiments/EXP-102-windows-c32-probability-partial-scheduling.md)：编译器已把原来的部分和安排为相同机器指令，本原型没有改变目标执行代码，no_codegen_change，不保留。不从未完成的 A/B 批次提取收益，不追加变体或确认。
-下一步：继续剩余四次额度，检查 decoder nearest upsample 的四个输出像素是否可以共享同一源投影读取。
+运行 `20261008-193306-lossless9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
+最近完成 [EXP-103](experiments/EXP-103-windows-decoder-nearest-source-sharing.md)：初测完整路径 11.065833→11.064777 ms，仅省 0.001055 ms，组间方向混合；控制组差 -0.011982/+0.008248 ms。唯一反序确认 11.079670→11.075610 ms，省 0.004060 ms，但三组 -0.003618/+0.015734/+0.000066 ms，控制最大绝对组差 0.012925 ms。没有稳定且可区别于控制波动的完整路径收益，unproven，不保留。
+下一步：继续剩余三次额度，检查 C512 attention 的 half 概率片段整体转换能否减少标量 FP8 打包指令。
 
 ## 本轮证据
 
@@ -20,7 +20,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-099：unproven；提交 e56cd28c0abf493d4ac542ce5d2dcb35b9d34fe8。
 - EXP-100：regressed；提交 57f98b78f45cb9f4830cfef3341e0a3dff42f66a。
 - EXP-101：unproven；提交 159441cf8e145c6d01c6114d3fdc43195f261d5c。
-- EXP-102：no_codegen_change；提交 本提交。
+- EXP-102：no_codegen_change；提交 2357a21c0fd3cbadd2f8d1ff4735ee170a7a1052。
+- EXP-103：unproven；提交 本提交。
 
 ## 继承状态与边界
 
