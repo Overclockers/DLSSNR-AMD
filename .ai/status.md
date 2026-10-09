@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-235203-ten9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
-最近完成 [EXP-138](experiments/EXP-138-windows-vit-permuted-probability-b-conversion.md)：初测节省 0.003409 ms，组间正负混合；唯一反序确认节省 -0.001068 ms，控制最大绝对组差 0.004494 ms。未建立超出波动的重复收益，判为 unproven，不保留。
-下一步：检查 GEMM 通道优先 epilogue 能否复用增益并消除 EXP-062 的动态选择开销。
+运行 `20261009-235203-ten9070xt`，上限 10；已启动 9，本提交完成后关闭 9。
+最近完成 [EXP-139](experiments/EXP-139-windows-gemm-channel-first-gain-reuse.md)：初测节省 -0.002841 ms，反序确认节省 -0.000840 ms；各组方向混合，确认控制最大绝对组差 0.007673 ms。没有重复可辨的收益，判为 unproven，不保留。
+下一步：最后一项检查 C64 persistent 路径的独占结束复位，保留完成选举和 epoch 原子发布。
 
 ## 本轮证据
 
@@ -22,7 +22,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-135：unproven；提交 3c937554b5ebc0bc71c46b0afccbd1f4830ce563。
 - EXP-136：unproven；提交 e735b8181e98474c4bfeb1c3d329f70bf00295b3。
 - EXP-137：mechanism_not_realized；提交 d9cfe80e0725150477620c342a950ebc397b47f2。
-- EXP-138：unproven；提交 本提交。
+- EXP-138：unproven；提交 b239d8923c7e56a114b29aafda2046088294f0d2。
+- EXP-139：unproven；提交 本提交。
 
 ## 继承状态与边界
 
