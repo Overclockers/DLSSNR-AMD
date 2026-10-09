@@ -2,7 +2,18 @@
 
 更新日期：2026-10-09（Asia/Hong_Kong）。
 
-## 当前工作
+## 当前工作（已完成）
+
+用户授权执行 [C256 DS 偏置预取设计](research-plan-bias-prefetch-20261009.md)，结果见
+[EXP-123](experiments/EXP-123-windows-bias-prefetch-causality.md)：旧 A/B 精确一致，C 精确复现历史失败。
+根因是最终机器码的 FP16 softmax 分母归约重排；首层窗口指数 32,768 half 全相同，296/1,024 分母不同。
+按原始 ISA 顺序做 CPU half 舍入回放，两边各 1,024 分母均精确重现；探针保留原完整输出。
+当前基线上的唯一修正版锁定既有归约顺序后，静态 FP32 整网输出精确一致、229 VGPR、零 scratch。
+但 12 处 bias 加载与 QK WMMA 相对顺序未提前，按 mechanism_not_realized 关闭，未进入完整宿主性能 A/B。
+生产与宿主未改，无新收益；原始证据在忽略的 build/windows/bias-prefetch-study-20261009/。
+这是已结束的单项定向实验，没有恢复旧 nr-optimize 额度；后续应先核对真实机器码归约和加载机制。
+
+## 前项定向研究（已结束）
 
 [EXP-122](experiments/EXP-122-windows-dx12-fp8-feasibility.md)：用户确认尝试 DX12 FP8 GEMM，
 通过后继续 C256 下采样热点内核。起点 main-experiment / 4500c2b；这是新的定向研究。
