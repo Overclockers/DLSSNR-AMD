@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-235203-ten9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-134](experiments/EXP-134-windows-vit-gemm-weight-first-prime.md)：预期权重数据提前加载未实现，mechanism_not_realized，不保留。查明此点时自动初筛已启动，保留其完整ABBA与控制结果：均差 0.008848 ms，首个baseline批次帧标准差0.269673 ms，其余多约0.04–0.06 ms，不删样或把表面均差登记为收益。因机制门槛已明确失败，不消耗追加确认。
-下一步：检查Decoder上采样已有向量数据的成对half乘法与加法，保持两次独立舍入，测试能否减少标量运算。
+运行 `20261009-235203-ten9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-135](experiments/EXP-135-windows-decoder-paired-half-arithmetic.md)：修正版初测节省 0.003961 ms，反序确认节省 0.000187 ms；未建立超过同路径波动的可重复收益，unproven，不保留。数值不等价的第一版只作为失败证据保存，不能作为提速路线。
+下一步：检查C512 attention在softmax分母归约前预读第一个V片段，保持每个context的原key累加顺序。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-131：retained；提交 076637eb4cdfa80f6a508d1ffdd01fb4ba328177。
 - EXP-132：unproven；提交 3c58a503d504d23ea536a431716d5f5838d8a938。
 - EXP-133：unproven；提交 0b261a904c774c252d9432c178303db6b8632e1c。
-- EXP-134：mechanism_not_realized；提交 本提交。
+- EXP-134：mechanism_not_realized；提交 b5afd2d3b4215ed117a802be55fb56aa3fcde55d。
+- EXP-135：unproven；提交 本提交。
 
 ## 继承状态与边界
 
