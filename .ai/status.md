@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-085523-newpaths9070xt`，上限 5；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-119](experiments/EXP-119-windows-window-tiled-noise-cache.md)：unproven，不保留。初测11.054422→11.052958 ms，只省0.001464 ms，三组混合；唯一反序确认11.086063→11.090065 ms，三组均慢，平均慢0.004003 ms。控制波动覆盖这些小差异，未证实完整路径收益。
-下一步：测试仅对packed compose选择wave64；保持同一个8×8工作组与原SPIR-V，查询能力后决定，矩阵内核继续原wave32。
+运行 `20261009-085523-newpaths9070xt`，上限 5；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-120](experiments/EXP-120-windows-packed-compose-wave64.md)：unproven，不保留。初测11.055182→11.050577 ms，省0.004605 ms；唯一反序确认11.103374→11.099824 ms，省0.003550 ms。六组虽方向一致，确认同路径控制本身省0.014006 ms，组差0.007551/0.020462 ms均超过候选效应，无法与波动区分，不追加第三轮。
+下一步：按新的地址冲突假设，测试小型activation槽位增加256-byte间隔；保持256-byte对齐、生命期及cold-age规则，并核验实际布局。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-117：mechanism_not_realized；提交 989e388890cd63aa8b293678aa85c6e1defffb78。
 - EXP-118：unproven；提交 46ced6bc5a9f6803aab6de091f56751b21187618。
-- EXP-119：unproven；提交 本提交。
+- EXP-119：unproven；提交 86e233c86d3df92ad67f1d7eba153f4573f6668c。
+- EXP-120：unproven；提交 本提交。
 
 ## 继承状态与边界
 
