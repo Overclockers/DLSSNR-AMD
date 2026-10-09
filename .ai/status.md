@@ -4,6 +4,17 @@
 
 ## 当前工作（已完成）
 
+已接纳侧会话 [EXP-124](experiments/EXP-124-windows-qk-epilogue-streaming.md)：C256 DS 的 QK 分数逐片段消费。
+一项假设、一版候选；静态 FP32 全部 11,470,640 个输出位模式与新鲜基线一致，禁用时 SPIR-V 恢复基线。
+两边均 229 VGPR / 107 SGPR、32 KiB LDS、零 scratch；5,632 个加载/WMMA/指数生成事件相对序列相同。
+12 处归约仅首次二元加法交换操作数，后续链一致；未证明所有输入或 NaN payload 等价。
+按 mechanism_not_realized 关闭，未进入完整宿主 ABBA 或扩大验收；未保留实现，无新增提速。
+运行 `20261009-side-stream9070xt` 上限/启动/关闭为 1/1/1；本提交保存文档后 completed 为 1，运行结束。
+证据入口为忽略的 `build/windows/side-stream-study-20261009/README.md`，最终分析为 `codegen-gate.json`。
+结合 EXP-123，后续优先寻找能改变实际数据流或加载数量的机制；本次接纳不启动新实验。
+
+## 前项偏置预取研究（已结束）
+
 用户授权执行 [C256 DS 偏置预取设计](research-plan-bias-prefetch-20261009.md)，结果见
 [EXP-123](experiments/EXP-123-windows-bias-prefetch-causality.md)：旧 A/B 精确一致，C 精确复现历史失败。
 根因是最终机器码的 FP16 softmax 分母归约重排；首层窗口指数 32,768 half 全相同，296/1,024 分母不同。
