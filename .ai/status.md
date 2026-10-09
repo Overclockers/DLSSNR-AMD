@@ -2,7 +2,19 @@
 
 更新日期：2026-10-09（Asia/Hong_Kong）。
 
-## 当前工作（已完成）
+## 当前工作（EXP-125 已结束）
+
+[EXP-125](experiments/EXP-125-windows-bias-lane-panels.md) 执行了 [bias 连续面板计划](research-plan-bias-lane-panels-20261009.md)。
+RX 9070 XT / 26.8.1（LLPC）；Windows GPU 32,768 标记映射与实际八层 262,144 bias 位模式检查通过。
+A0/A1/B/disabled 各 11,470,640 个 FP32 输出位模式相同；禁用时 SPIR-V、plan、权重数据恢复 A0。
+12 个区域的 96 条 bias b128 已变为连续面板，加载数量不变；A1/B 同一 host 二进制、布局错配双向拒绝。
+B 的 VGPR 229→230，SGPR 107、LDS 32 KiB、scratch 0；按既定门槛 resource_gate_failed 关闭，不保留。
+未做完整宿主性能 ABBA 或扩大验收；没有实测退步/提速或全输入等价结论。
+运行 `20261009-bias-panel9070xt` 上限/启动/关闭 1/1/1；本提交保存记录，不恢复旧预算、不自动重开。
+证据入口：忽略的 `build/windows/bias-panel-study-20261009/README.md`，最终报告 `codegen-gate.json`。
+生产、宿主、Linux 与原有暂存内容未改；无部署、安装或推送。
+
+## 最近实验（已完成）
 
 已接纳侧会话 [EXP-124](experiments/EXP-124-windows-qk-epilogue-streaming.md)：C256 DS 的 QK 分数逐片段消费。
 一项假设、一版候选；静态 FP32 全部 11,470,640 个输出位模式与新鲜基线一致，禁用时 SPIR-V 恢复基线。
