@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-235203-ten9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
-最近完成 [EXP-136](experiments/EXP-136-windows-attention-context-first-value-prefetch.md)：初测节省 0.003069 ms，唯一反序确认节省 -0.003082 ms；尚未建立可区别于对应同路径波动的稳定完整路径收益，unproven，不保留。提前读取确实生效，但不能据此抵扣拆分读取与其它调度的成本。
-下一步：检查输入层缓存噪声能否在独立纹理读取和颜色编码期间提前加载，保持缓存布局和fallback。
+运行 `20261009-235203-ten9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
+最近完成 [EXP-137](experiments/EXP-137-windows-input-noise-load-lookahead.md)：预期的加载/纹理或编码重叠未实现，mechanism_not_realized，不保留。第一版已启动的完整ABBA结果节省 -0.008658 ms，方向混合且未建立可靠收益，全部结果保留。针对wait修正后真实代码不变，停止本假设，不消耗追加确认。
+下一步：检查ViT概率片段直接转为B操作数时，能否在保留原key permutation的条件下减少FP8打包。
 
 ## 本轮证据
 
@@ -20,7 +20,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-133：unproven；提交 0b261a904c774c252d9432c178303db6b8632e1c。
 - EXP-134：mechanism_not_realized；提交 b5afd2d3b4215ed117a802be55fb56aa3fcde55d。
 - EXP-135：unproven；提交 3c937554b5ebc0bc71c46b0afccbd1f4830ce563。
-- EXP-136：unproven；提交 本提交。
+- EXP-136：unproven；提交 e735b8181e98474c4bfeb1c3d329f70bf00295b3。
+- EXP-137：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
