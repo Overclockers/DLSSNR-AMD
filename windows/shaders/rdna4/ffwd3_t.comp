@@ -239,13 +239,29 @@ void main() {
                 NR_FFWD_LOAD2(w0,w1,q0grp,jbase+n*16u,k*16u,64u)
                 for (int m = 0; m < 2; ++m) { NR_MMA(acc2[n][m],w0,r[k][m]);NR_MMA(acc2[n+1u][m],w1,r[k][m]); }
             }
+// Keep the first Q2 K step separate: selecting a prefetched fragment inside
+// the K loop scalarizes wide weight loads on LLPC. Each accumulator still
+// consumes K=0,1,2,3 in order, with unchanged activation and FP8 rounding.
+#if NR_Q2_PEELED
+        NR_FRAG_A first0,first1,first2,first3;
+        NR_FFWD_LOAD2(first0,first1,q2grp,0u,jbase,256u)
+        NR_FFWD_LOAD2(first2,first3,q2grp,32u,jbase,256u)
+#endif
         NR_FRAG_B h[4][2];
         for (int n = 0; n < 4; ++n) for (int m = 0; m < 2; ++m)
             for(int c=0;c<8;c+=2) {
                 fe4m3vec2 q=nr_ffwd_quant(nr_swin_act2(f16vec2(acc2[n][m][c],acc2[n][m][c+1])));
                 h[n][m][c]=q.x;h[n][m][c+1]=q.y;
             }
+#if NR_Q2_PEELED
+        for (int m=0;m<2;++m) {
+            NR_MMA(acc3[0][m],first0,h[0][m]); NR_MMA(acc3[1][m],first1,h[0][m]);
+            NR_MMA(acc3[2][m],first2,h[0][m]); NR_MMA(acc3[3][m],first3,h[0][m]);
+        }
+        for (uint k = 1u; k < 4u; ++k)
+#else
         for (uint k = 0u; k < 4u; ++k)
+#endif
             for(uint n=0u;n<4u;n+=2u) {
                 NR_FRAG_A w0,w1;
                 NR_FFWD_LOAD2(w0,w1,q2grp,n*16u,jbase+k*16u,256u)
