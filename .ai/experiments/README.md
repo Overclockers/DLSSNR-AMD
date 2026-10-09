@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-131；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-132；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
 EXP-126–130 完成新一轮 5/5 无损优化尝试：两项退步，三项收益未证实，均未保留实现。
 当前研究显示独立 context 链交错能够改变实际 WMMA 调度，但尚未获得超出控制波动的完整路径收益。
 EXP-125 的 C256 DS bias 连续面板已实现且静态输出精确，但 VGPR 229→230，触发既定资源停止门槛，不保留。
@@ -150,6 +150,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-129](EXP-129-windows-attention-value-early-publication.md) | C512 attention V 提前发布 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-130](EXP-130-windows-persistent-terminal-consumer-cull.md) | Persistent 末层消费者读取剔除 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-131](EXP-131-windows-ffwd-peeled-weight-lookahead.md) | FFWD预取首步消费展开 | 保留；初测/确认均省约0.0356 ms | 两套配方中间值、历史/格式/边界精确通过 | 两仓Windows同步 | 用户暂缓 |
+| [EXP-132](EXP-132-windows-vit-tail-clamped-value-reuse.md) | ViT 尾块 clamped V 片段复用 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
