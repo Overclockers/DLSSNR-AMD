@@ -1,8 +1,10 @@
 # 优化实验
 
-已记录至 EXP-139；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
-EXP-126–130 完成新一轮 5/5 无损优化尝试：两项退步，三项收益未证实，均未保留实现。
-当前研究显示独立 context 链交错能够改变实际 WMMA 调度，但尚未获得超出控制波动的完整路径收益。
+已记录至 EXP-140；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+EXP-131–140 完成新一轮 10/10 无损优化尝试：1 项 retained、7 项 unproven、2 项 mechanism_not_realized。
+EXP-131 保留 FFWD 首步权重预取消费展开，完整离线 NR 初测省 0.035623 ms、反序确认省 0.035626 ms（约 0.32%）；已完成两套配方的精确验证。
+本轮预算耗尽；核心实验提交推送 main-experiment，宿主保留提交 f526a6d7c8bd6e69c5bc15e6ef6bdba379515cf4 仅留本地 customer-mochi-backed。
+此前 EXP-126–130 的 5/5 无损尝试均未保留；其独立 context 链交错改变了实际 WMMA 调度，但没有可靠完整路径收益。
 EXP-125 的 C256 DS bias 连续面板已实现且静态输出精确，但 VGPR 229→230，触发既定资源停止门槛，不保留。
 EXP-124 的 C256 DS QK 分数逐片段消费静态输出精确，但实际加载/WMMA/指数生成顺序未变，机制未实现，不保留。
 EXP-123 查明旧 bias 预取失败源于 FP16 分母归约重排；锁序修正版静态输出精确，但加载未提前，不保留。
@@ -158,6 +160,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-137](EXP-137-windows-input-noise-load-lookahead.md) | 输入缓存噪声提前读取与延迟解包 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-138](EXP-138-windows-vit-permuted-probability-b-conversion.md) | ViT 概率直接转换 B 片段并保持 key permutation | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-139](EXP-139-windows-gemm-channel-first-gain-reuse.md) | GEMM 通道优先 epilogue 的短生命周期增益复用 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-140](EXP-140-windows-c64-exclusive-queue-reset.md) | C64 persistent 队列的独占结束复位 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
