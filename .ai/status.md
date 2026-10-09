@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-235203-ten9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-137](experiments/EXP-137-windows-input-noise-load-lookahead.md)：预期的加载/纹理或编码重叠未实现，mechanism_not_realized，不保留。第一版已启动的完整ABBA结果节省 -0.008658 ms，方向混合且未建立可靠收益，全部结果保留。针对wait修正后真实代码不变，停止本假设，不消耗追加确认。
-下一步：检查ViT概率片段直接转为B操作数时，能否在保留原key permutation的条件下减少FP8打包。
+运行 `20261009-235203-ten9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-138](experiments/EXP-138-windows-vit-permuted-probability-b-conversion.md)：初测节省 0.003409 ms，组间正负混合；唯一反序确认节省 -0.001068 ms，控制最大绝对组差 0.004494 ms。未建立超出波动的重复收益，判为 unproven，不保留。
+下一步：检查 GEMM 通道优先 epilogue 能否复用增益并消除 EXP-062 的动态选择开销。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-134：mechanism_not_realized；提交 b5afd2d3b4215ed117a802be55fb56aa3fcde55d。
 - EXP-135：unproven；提交 3c937554b5ebc0bc71c46b0afccbd1f4830ce563。
 - EXP-136：unproven；提交 e735b8181e98474c4bfeb1c3d329f70bf00295b3。
-- EXP-137：mechanism_not_realized；提交 本提交。
+- EXP-137：mechanism_not_realized；提交 d9cfe80e0725150477620c342a950ebc397b47f2。
+- EXP-138：unproven；提交 本提交。
 
 ## 继承状态与边界
 
