@@ -6,7 +6,7 @@
 
 ## 假设与实现
 
-将每个 query/key 偏置行的八个连续 FP32 值经同一 binding 的 vec4 视图读成两个面板，保留原 pair 指数调用、偏置加法位置、归约树和所有舍入。put_f32 经 256-byte 对齐，query 行和 key 起点均为 16 个 float 的倍数。区别于 EXP-029 的跨 MMA 预取和 EXP-087 的 FP8 权重宽读。
+将每个 query/key 偏置行的八个连续 FP32 值经同一 binding 的 vec4 视图读成两个面板，保留原 pair 指数调用、偏置加法位置、归约树和所有舍入。put_f32 经 16-byte 对齐，query 行和 key 起点均为 16 个 float 的倍数。区别于 EXP-029 的跨 MMA 预取和 EXP-087 的 FP8 权重宽读。
 
 禁用 SPIR-V 精确复现。目标 FP32、packed 全图均逐字节一致。驱动静态 buffer_load_b128=8、buffer_load_b64=176 在两版完全相同：编译器已完成相同宽度的读合并，预期减少访存未实现。机器码26880→27008 B，静态指令3882→3890；候选185 VGPR、58 SGPR、9216 B LDS、零 scratch。
 
