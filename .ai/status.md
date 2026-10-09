@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261009-fresh-five9070xt`，上限 5；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-128](experiments/EXP-128-windows-attention-context-independent-chains.md)：unproven，不保留。初测平均省 0.004939 ms，三组 -0.002074/+0.009086/+0.007804 ms；唯一反序确认平均省 0.009314 ms，但三组 +0.025775/+0.010108/-0.007942 ms，方向仍混合。确认控制最后一批 11.965917 ms、帧内标准差 2.132846 ms，含明显抖动，全部保留；确认控制组差 -0.000326/-0.474111 ms。不能删除异常批次或再追加确认，未证明稳定净收益。
-下一步：研究 QKV epilogue 中已量化 V 的提前 LDS 发布，减少 V 横跨 Q/K 归一化的存活期；下一项重新执行固定预热和控制，不沿用异常控制估算收益。
+运行 `20261009-fresh-five9070xt`，上限 5；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-129](experiments/EXP-129-windows-attention-value-early-publication.md)：unproven，不保留。初测 11.015017→11.001676 ms，三组都快，平均省 0.013341 ms；唯一反序确认 11.040274→11.034245 ms，平均省 0.006030 ms，组差 -0.003405/+0.018785/+0.002709 ms。确认同路径控制组差 +0.023707/-0.016245 ms，比确认收益更大且方向相反；尚不能将收益与同期波动区分，不再追加确认。
+下一步：检查 persistent 最后一个层的消费者表恒为 sentinel 的不变量，尝试在保持所有 release、barrier 和 epoch 协议下省去无效表读取。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-126：regressed；提交 2c316613f1278ac64d2d61cd41feaa81ea5fa2fc。
 - EXP-127：regressed；提交 9f1bdd1da6af0e4a90415ef65e1c6917d16bbed3。
-- EXP-128：unproven；提交 本提交。
+- EXP-128：unproven；提交 0a7cc95293263762a907bc9c6d792e112283bccc。
+- EXP-129：unproven；提交 本提交。
 
 ## 继承状态与边界
 
