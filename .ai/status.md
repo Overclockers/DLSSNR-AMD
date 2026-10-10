@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-224000-ten9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-148](experiments/EXP-148-windows-vit-probability-xor-selection.md)：no_codegen_change，不保留。实际目标驱动机器码完全相同；未启动packed候选检查、4000帧候选预热或完整性能ABBA。
-下一步：继续第4/10项：FFWD已完成middle累加器的逐K激活转换与即时final消费，避免重复EXP-073的middle重分组。
+运行 `20261010-224000-ten9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-149](experiments/EXP-149-windows-ffwd-activation-immediate-consumer.md)：unproven，不保留。初测10.962463→10.964881 ms，节省−0.002418 ms，三组+0.003360/+0.002714/−0.013327 ms。唯一反序确认11.017302→11.016680 ms，节省+0.000622 ms，三组−0.003670/+0.005150/+0.000385 ms。初测控制组差+0.010939/−0.021532 ms，确认控制−0.003208/+0.007809 ms；候选收益方向混合且落入对照波动，没有删样或追加第三轮。
+下一步：继续第5/10项：C256最终下采样projection按统一shear identity条件分离循环。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-146：mechanism_not_realized；提交 a5eb50b96a8e538ed4a77c918f6394de532f7e23。
 - EXP-147：mechanism_not_realized；提交 deab61bce3497f898ad3df36cc75fd3a38630187。
-- EXP-148：no_codegen_change；提交 本提交。
+- EXP-148：no_codegen_change；提交 65f420cb87cbabc362638990d5a12498a10063b6。
+- EXP-149：unproven；提交 本提交。
 
 ## 继承状态与边界
 
