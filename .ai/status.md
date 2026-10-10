@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 1，本提交完成后关闭 1。
-最近完成 [EXP-141](experiments/EXP-141-windows-ffwd-input-bank-lookahead.md)：driver 两版均在首个 WMMA 前加载全部16个 Stage-1 activation b64；没有实现下一 K 输入加载与当前 WMMA 的预期交错。新流程在 ISA 门槛关闭，未启动完整性能 ABBA 或4000帧候选预热；不把静态少一条 wait 换算为收益。
-下一步：检查高成本 C32 image post 的读写地址和输出合成，优先找不依赖调度提示的整数地址消除。
+运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 2，本提交完成后关闭 2。
+最近完成 [EXP-142](experiments/EXP-142-windows-post-full-window-bounds.md)：初测平均省0.004037 ms，三组方向混合；唯一反序确认平均慢0.002001 ms，组差-0.010692/+0.006728/-0.002038 ms。对应确认同路径控制平均差0.006735 ms，最大组差0.010209 ms。没有可重复且区别于控制波动的完整链路收益，unproven，不保留。
+下一步：研究ViT扩张KFRAG=2的第二步prime延迟消费，检验能否缩短操作数生命周期并实现load与首步WMMA交错；区别于仅交换weight/input加载顺序。
 
 ## 本轮证据
 
@@ -15,7 +15,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 100% 模型尺度、单次 NR、完整宿主 R11G11B10、depth=3；四批基线：11.028914 / 11.008496 / 11.010935 / 11.028190 ms。
 本轮保留数量：0；历史收益不重复计入本轮。
 
-- EXP-141：mechanism_not_realized；提交 本提交。
+- EXP-141：mechanism_not_realized；提交 f673b7b5425bf6322945c0dd93543b758cd76994。
+- EXP-142：unproven；提交 本提交。
 
 ## 继承状态与边界
 
