@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-224000-ten9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
-最近完成 [EXP-151](experiments/EXP-151-windows-vit-context-value-late-load.md)：regressed，不保留。完整NR 10.985825→10.996851 ms，平均慢0.011026 ms；三组均慢0.010808/0.016731/0.005540 ms。紧随控制组差+0.001270/−0.000475 ms，候选退化大于控制差且方向一致；初筛拒绝，不追加反序确认。降低存活期同时推迟读取，最终未获得净收益。
-下一步：继续第7/10项：C64 FP32残差gain采用对齐vec2读取并保留奇地址回退。
+运行 `20261010-224000-ten9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
+最近完成 [EXP-152](experiments/EXP-152-windows-c64-residual-gain-pair-read.md)：no_codegen_change，不保留。两个实际目标模块驱动代码全部相同；未启动packed候选检查、4000帧预热或完整性能ABBA。
+下一步：继续第8/10项：现存Windows C256 UPS首先读取全部32个输入片段，检验逐K消费能否缩短该区域存活期。
 
 ## 本轮证据
 
@@ -20,7 +20,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-148：no_codegen_change；提交 65f420cb87cbabc362638990d5a12498a10063b6。
 - EXP-149：unproven；提交 579f9544cdb1fb5f1231c35f5725066fe8a280a1。
 - EXP-150：regressed；提交 ea438b8f497e9e81ccf0d506f6d11561c16f8097。
-- EXP-151：regressed；提交 本提交。
+- EXP-151：regressed；提交 743f0bdcd372090216278bfe994876cd534b6f23。
+- EXP-152：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
