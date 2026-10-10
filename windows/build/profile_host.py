@@ -14,6 +14,8 @@ import re
 import subprocess
 import sys
 
+from experiment_support import StageTimings
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -26,6 +28,8 @@ def main():
     parser.add_argument('--host', required=True, type=Path)
     parser.add_argument('--out', type=Path, default=ROOT / 'build/windows/host-profile')
     parser.add_argument('--production', action='store_true', help='compile without diagnostic hooks')
+    parser.add_argument('--timings', type=Path, help='wall-clock JSONL (default: under --out)')
+    parser.add_argument('--incremental', action='store_true', help='cache the host recipe shader builds')
     args = parser.parse_args()
     host, out = args.host.resolve(), args.out.resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()) or out == ROOT / 'build':
@@ -40,6 +44,7 @@ def main():
         if not path.is_file():
             parser.error(f'missing matched host source/toolchain: {path}')
     out.mkdir(parents=True, exist_ok=True)
+    timings = StageTimings(args.timings or out / 'build-timings.jsonl')
     # The host ABI fixture owns the D3D12 setup and frame helpers. Reuse only its
     # helper prefix; fail closed if its entrypoint changes instead of guessing.
     fixture_path = host / 'tests/mochizuki/runtime.cpp'
@@ -70,7 +75,8 @@ def main():
 
     def run(command):
         commands.append([str(s) for s in command])
-        subprocess.run(command, check=True)
+        with timings.stage('build', command=commands[-1]):
+            subprocess.run(command, check=True)
 
     objects = []
     for source, extra in sources:
@@ -89,18 +95,25 @@ def main():
         tool_flags = flags if name in ('check_encode', 'check_direct_original', 'check_packed_output') else [f for f in flags if f != '/DNOMINMAX']
         run(['cl', *tool_flags, *['/I' + str(p) for p in inc], str(source), '/Fo' + str(out / (name + '.obj')),
              '/Fe' + str(out / (name + '.exe')), '/link', *libs])
-    run([sys.executable, str(host / 'third_party/mochizuki/windows/build/build_network.py'), 'rdna4',
-         '--glslang', str(glslang), '--out', str(out / 'dlssnr-amd/shaders')])
+    shader_command = [sys.executable]
+    if args.incremental:
+        shader_command += [str(ROOT / 'windows/build/build_network_cached.py'),
+                           '--source-root', str(host / 'third_party/mochizuki')]
+    else:
+        shader_command += [str(host / 'third_party/mochizuki/windows/build/build_network.py')]
+    run([*shader_command, 'rdna4', '--glslang', str(glslang), '--out', str(out / 'dlssnr-amd/shaders')])
     run([str(glslang), '-V', '--target-env', 'vulkan1.3', str(ROOT / 'windows/build/check_packed_output.comp'),
          '-o', str(out / 'check_packed_output.spv')])
     if identities != {str(p.relative_to(host)): digest(p) for p in sorted(watched)}:
         raise SystemExit('source/toolchain changed during build; discard this result and rebuild')
     result = {'kind': 'offline-production-check' if args.production else 'offline-diagnostics-only',
+              'wall_clock_seconds': timings.totals, 'timing_run_id': timings.run_id,
               'host_sources': identities, 'commands': commands,
               'study_sources': {str(p.relative_to(ROOT)): digest(p) for p in
                                 (Path(__file__), ROOT / 'windows/build/profile_host.cpp', ROOT / 'windows/build/check_encode.cpp',
                                  ROOT / 'windows/build/check_direct_original.cpp',
-                                 ROOT / 'windows/build/check_packed_output.cpp', ROOT / 'windows/build/check_packed_output.comp')},
+                                 ROOT / 'windows/build/check_packed_output.cpp', ROOT / 'windows/build/check_packed_output.comp',
+                                 ROOT / 'windows/build/experiment_support.py', ROOT / 'windows/build/build_network_cached.py')},
               'artifacts': {str(p.relative_to(out)): digest(p) for p in sorted(out.rglob('*'))
                             if p.suffix in ('.dll', '.exe', '.spv', '.txt')}}
     (out / 'offline-build.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')

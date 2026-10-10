@@ -20,6 +20,10 @@
 C256 DS 的 104 个采样 wave 时序无异常，加载等待值得下一轮研究；尚无新的生产提速结论。
 
 实现约束以 [CLAUDE.md](../CLAUDE.md) 为准；贡献约定见 [AGENTS.md](../AGENTS.md)。
+
+新 Windows shader 调度/代码生成实验使用 [分阶段实验工具](../docs/windows-experiment-workflow.md)：
+缓存构建，先精确输出与 driver ISA 机制检查，再启动性能初筛；按阶段保存壁钟耗时。
+保留前仍做无缓存重建及完整验收，不改变假设预算、精度要求或测量协议。
 稳定架构见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)，画质验证遵循
 [NGX-VERIFICATION.md](../docs/ngx-verification/NGX-VERIFICATION.md)。引用这些资料，不复制维护。
 

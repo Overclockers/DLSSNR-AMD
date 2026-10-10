@@ -8,6 +8,10 @@ It requires the matching host source with `nr_profile.hpp`, `MochizukiProfile.h`
 and the linear-input binding integration, plus the host's pinned Vulkan headers
 and glslang. Run from an x64 MSVC developer prompt. No model is copied or shipped.
 
+For incremental shader builds, ISA checks before performance screening, and
+automatic wall-clock stage records, use the
+[offline experiment workflow](windows-experiment-workflow.md).
+
 ```powershell
 python -X utf8 windows/build/profile_host.py --host ../dlss-5-amd-project
 ```
