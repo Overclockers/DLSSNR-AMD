@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261011-001700-ten9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-159](experiments/EXP-159-windows-vit-contract-quad-immediate-quantization.md)：初测节省0.002325 ms，三组有正有负；唯一反序确认节省0.006184 ms，其中一组为负，同路径确认控制节省0.006201 ms、最大组差0.007847 ms。效果没有可靠区别于控制波动，按unproven关闭，不保留。
-下一步：根据成本排名测试C32扩张按两个query fragments分批以降低累加器峰值；十次完成保存核验后关机。
+运行 `20261011-001700-ten9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-160](experiments/EXP-160-windows-c32-expansion-query-split.md)：寄存器/占用机制没有实现，按mechanism_not_realized关闭，不进入完整宿主性能A/B；没有收益结论。
+下一步：检查输入缓存噪声两dword是否能通过8字节视图合并读取；保持原half-float转换与分支。完成十次保存核验后关机。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-156：mechanism_not_realized；提交 5b989885aa4a3e28c3d8f1e364bcbc27ce7f12fb。
 - EXP-157：unproven；提交 a67a075221870ff7f390f8c469b3f395b8c34dce。
 - EXP-158：correctness_failed；提交 d98b24cc9a9421e8c4eb5b224cf7e67386fe6c80。
-- EXP-159：unproven；提交 本提交。
+- EXP-159：unproven；提交 201929eca4d62d159f68016489ee1241a3e618e4。
+- EXP-160：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
