@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-158；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-159；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
 EXP-146–155 完成新一轮 10/10 无损尝试：3 项 mechanism_not_realized、2 项 no_codegen_change、2 项 unproven、3 项 regressed；新增保留收益 0 ms。
 五项在 driver 机制/机器码门槛提前关闭；其余使用完整路径配对和同路径控制，未证实候选按一次反序确认额度复测。十次核心实验记录均提交并按流程推送 main-experiment；宿主未新增改动或提交，不推送。预算耗尽，不自动续跑。
 EXP-141–145 完成提效工具落地后的 5/5 无损尝试：2 项 mechanism_not_realized、2 项 unproven、1 项 no_codegen_change；本轮新增保留收益 0 ms。
@@ -183,6 +183,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-156](EXP-156-windows-c256-project-residual-gain-reuse.md) | C256 DS 输出投影残差增益跨 query 复用 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-157](EXP-157-windows-ffwd-q0-weight-grouped-mma.md) | FFWD Q0 按权重分组执行独立 MMA | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-158](EXP-158-windows-vit-key-fragment-immediate-consumer.md) | ViT K 片段逐维读取与双 query 即时消费 | 未保留；correctness_failed | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-159](EXP-159-windows-vit-contract-quad-immediate-quantization.md) | ViT 收缩按 quad 即时量化 epilogue | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。

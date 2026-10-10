@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261011-001700-ten9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-158](experiments/EXP-158-windows-vit-key-fragment-immediate-consumer.md)：按correctness_failed关闭；没有性能A/B，不接受任何容差，也没有保留或提速结论。原型仅在忽略目录，生产两仓未改。
-下一步：检查ViT收缩epilogue每四个结果即时量化，尝试缩短half结果生存期而保持单元素表达式；十次完成保存后关机。
+运行 `20261011-001700-ten9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-159](experiments/EXP-159-windows-vit-contract-quad-immediate-quantization.md)：初测节省0.002325 ms，三组有正有负；唯一反序确认节省0.006184 ms，其中一组为负，同路径确认控制节省0.006201 ms、最大组差0.007847 ms。效果没有可靠区别于控制波动，按unproven关闭，不保留。
+下一步：根据成本排名测试C32扩张按两个query fragments分批以降低累加器峰值；十次完成保存核验后关机。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-156：mechanism_not_realized；提交 5b989885aa4a3e28c3d8f1e364bcbc27ce7f12fb。
 - EXP-157：unproven；提交 a67a075221870ff7f390f8c469b3f395b8c34dce。
-- EXP-158：correctness_failed；提交 本提交。
+- EXP-158：correctness_failed；提交 d98b24cc9a9421e8c4eb5b224cf7e67386fe6c80。
+- EXP-159：unproven；提交 本提交。
 
 ## 继承状态与边界
 
