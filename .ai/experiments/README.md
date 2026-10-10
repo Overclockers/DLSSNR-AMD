@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-162；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-163；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
 EXP-146–155 完成新一轮 10/10 无损尝试：3 项 mechanism_not_realized、2 项 no_codegen_change、2 项 unproven、3 项 regressed；新增保留收益 0 ms。
 五项在 driver 机制/机器码门槛提前关闭；其余使用完整路径配对和同路径控制，未证实候选按一次反序确认额度复测。十次核心实验记录均提交并按流程推送 main-experiment；宿主未新增改动或提交，不推送。预算耗尽，不自动续跑。
 EXP-141–145 完成提效工具落地后的 5/5 无损尝试：2 项 mechanism_not_realized、2 项 unproven、1 项 no_codegen_change；本轮新增保留收益 0 ms。
@@ -187,6 +187,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-160](EXP-160-windows-c32-expansion-query-split.md) | C32 扩张按 query 对分批降低累加器峰值 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-161](EXP-161-windows-input-noise-paired-word-load.md) | 输入缓存噪声两 dword 的对齐 8 字节读取 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-162](EXP-162-windows-compose-original-texture-lookahead.md) | Runtime 合成的 original 纹理提前读取 | 未保留；no_codegen_change | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-163](EXP-163-windows-attention-first-bias-pair-lookahead.md) | C512 attention 首个 bias pair 提前加载 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。

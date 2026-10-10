@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261011-001700-ten9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
-最近完成 [EXP-162](experiments/EXP-162-windows-compose-original-texture-lookahead.md)：按no_codegen_change提前关闭；未启动性能A/B，三帧诊断不能作为收益。
-下一步：测试C512 attention首个概率pair的只读偏置提前加载是否能跨QK计算隐藏等待；十次完成保存核验后关机。
+运行 `20261011-001700-ten9070xt`，上限 10；已启动 8，本提交完成后关闭 8。
+最近完成 [EXP-163](experiments/EXP-163-windows-attention-first-bias-pair-lookahead.md)：基线已具有所需QK前预读，候选没有实现额外隐藏机会，且增加读取数和寄存器；按mechanism_not_realized提前关闭，没有性能结论。
+下一步：decoder宽路径仍有8条连续u16增益读取，尝试用对齐16字节原位读取合并；完成十次保存核验后关机。
 
 ## 本轮证据
 
@@ -21,7 +21,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-159：unproven；提交 201929eca4d62d159f68016489ee1241a3e618e4。
 - EXP-160：mechanism_not_realized；提交 4b0c6879b19762495e25dfc645f0a1bb84ff6358。
 - EXP-161：unproven；提交 24fe39e88c0448a10a82deee2f4ccf997b5aa0f6。
-- EXP-162：no_codegen_change；提交 本提交。
+- EXP-162：no_codegen_change；提交 7f741298f48b2b87ac11f1b731876dca5ac33445。
+- EXP-163：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
