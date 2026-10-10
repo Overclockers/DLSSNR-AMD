@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-224000-ten9070xt`，上限 10；已启动 1，本提交完成后关闭 1。
-最近完成 [EXP-146](experiments/EXP-146-windows-c256-bias-load-lookahead.md)：mechanism_not_realized，不保留。修正版恢复了静态数值，却没有实现所需加载提前；未启动候选packed检查、4000帧候选预热、完整宿主性能ABBA。指令位置/分配变化不作为GPU收益。
-下一步：继续第2/10项：检验C512 Q/K精确归一化树的独立子树即时消费，缩短中间值存活期。
+运行 `20261010-224000-ten9070xt`，上限 10；已启动 2，本提交完成后关闭 2。
+最近完成 [EXP-147](experiments/EXP-147-windows-attention-norm-subtree-stream.md)：mechanism_not_realized，不保留。源码子树消费没有按预期落到驱动；没有启动候选packed、4000帧候选预热或完整性能ABBA。局部依赖追踪不用于性能周期预测。
+下一步：继续第3/10项：ViT概率排列的uint条件位交换，保持所有概率和归约计算不变。
 
 ## 本轮证据
 
@@ -15,7 +15,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 100% 模型尺度、单次 NR、完整宿主 R11G11B10、depth=3；四批基线：10.963855 / 10.966668 / 10.968056 / 10.955780 ms。
 本轮保留数量：0；历史收益不重复计入本轮。
 
-- EXP-146：mechanism_not_realized；提交 本提交。
+- EXP-146：mechanism_not_realized；提交 a5eb50b96a8e538ed4a77c918f6394de532f7e23。
+- EXP-147：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
