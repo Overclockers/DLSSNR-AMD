@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-147；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-148；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
 EXP-141–145 完成提效工具落地后的 5/5 无损尝试：2 项 mechanism_not_realized、2 项 unproven、1 项 no_codegen_change；本轮新增保留收益 0 ms。
 提交 `29f1b93` 加入 shader 缓存、精确输出/driver 机制门槛与阶段壁钟；三项在 ISA 阶段提前关闭。五次记录均推送核心 main-experiment，宿主没有新改动或推送。
 此前 EXP-131–140 完成 10/10 无损优化尝试：1 项 retained、7 项 unproven、2 项 mechanism_not_realized。
@@ -170,6 +170,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-145](EXP-145-windows-vit-contract-carried-fragment-addresses.md) | ViT 收缩的片段地址循环携带 | 未保留；no_codegen_change | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-146](EXP-146-windows-c256-bias-load-lookahead.md) | C256 bias 预取与局部锁序隔离 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-147](EXP-147-windows-attention-norm-subtree-stream.md) | C512 Q/K归一化子树即时消费 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-148](EXP-148-windows-vit-probability-xor-selection.md) | ViT概率片段的xor条件位交换 | 未保留；no_codegen_change | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。

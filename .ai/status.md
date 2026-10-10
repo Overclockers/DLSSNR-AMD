@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-224000-ten9070xt`，上限 10；已启动 2，本提交完成后关闭 2。
-最近完成 [EXP-147](experiments/EXP-147-windows-attention-norm-subtree-stream.md)：mechanism_not_realized，不保留。源码子树消费没有按预期落到驱动；没有启动候选packed、4000帧候选预热或完整性能ABBA。局部依赖追踪不用于性能周期预测。
-下一步：继续第3/10项：ViT概率排列的uint条件位交换，保持所有概率和归约计算不变。
+运行 `20261010-224000-ten9070xt`，上限 10；已启动 3，本提交完成后关闭 3。
+最近完成 [EXP-148](experiments/EXP-148-windows-vit-probability-xor-selection.md)：no_codegen_change，不保留。实际目标驱动机器码完全相同；未启动packed候选检查、4000帧候选预热或完整性能ABBA。
+下一步：继续第4/10项：FFWD已完成middle累加器的逐K激活转换与即时final消费，避免重复EXP-073的middle重分组。
 
 ## 本轮证据
 
@@ -16,7 +16,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 本轮保留数量：0；历史收益不重复计入本轮。
 
 - EXP-146：mechanism_not_realized；提交 a5eb50b96a8e538ed4a77c918f6394de532f7e23。
-- EXP-147：mechanism_not_realized；提交 本提交。
+- EXP-147：mechanism_not_realized；提交 deab61bce3497f898ad3df36cc75fd3a38630187。
+- EXP-148：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
