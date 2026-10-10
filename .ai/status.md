@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261011-001700-ten9070xt`，上限 10；已启动 6，本提交完成后关闭 6。
-最近完成 [EXP-161](experiments/EXP-161-windows-input-noise-paired-word-load.md)：初测候选增加0.003167 ms，三组方向混合；唯一反序确认节省0.001360 ms，组差-0.006265/+0.007521/+0.002826 ms，仍混合且与初测方向相反。控制批保留全部样本，未按其中高波动帧删样或修正。没有可靠可复现收益，按unproven关闭。
-下一步：测试完整NR合成的original纹理读取能否与model/proxy读取及独立运算重叠；十次完成保存核验后关机。
+运行 `20261011-001700-ten9070xt`，上限 10；已启动 7，本提交完成后关闭 7。
+最近完成 [EXP-162](experiments/EXP-162-windows-compose-original-texture-lookahead.md)：按no_codegen_change提前关闭；未启动性能A/B，三帧诊断不能作为收益。
+下一步：测试C512 attention首个概率pair的只读偏置提前加载是否能跨QK计算隐藏等待；十次完成保存核验后关机。
 
 ## 本轮证据
 
@@ -20,7 +20,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-158：correctness_failed；提交 d98b24cc9a9421e8c4eb5b224cf7e67386fe6c80。
 - EXP-159：unproven；提交 201929eca4d62d159f68016489ee1241a3e618e4。
 - EXP-160：mechanism_not_realized；提交 4b0c6879b19762495e25dfc645f0a1bb84ff6358。
-- EXP-161：unproven；提交 本提交。
+- EXP-161：unproven；提交 24fe39e88c0448a10a82deee2f4ccf997b5aa0f6。
+- EXP-162：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
