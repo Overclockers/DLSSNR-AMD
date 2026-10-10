@@ -1,6 +1,6 @@
 # 优化实验
 
-已记录至 EXP-143；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+已记录至 EXP-144；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
 EXP-131–140 完成新一轮 10/10 无损优化尝试：1 项 retained、7 项 unproven、2 项 mechanism_not_realized。
 EXP-131 保留 FFWD 首步权重预取消费展开，完整离线 NR 初测省 0.035623 ms、反序确认省 0.035626 ms（约 0.32%）；已完成两套配方的精确验证。
 本轮预算耗尽；核心实验提交推送 main-experiment，宿主保留提交 f526a6d7c8bd6e69c5bc15e6ef6bdba379515cf4 仅留本地 customer-mochi-backed。
@@ -164,6 +164,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-141](EXP-141-windows-ffwd-input-bank-lookahead.md) | FFWD 首段输入双 bank 预取 | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-142](EXP-142-windows-post-full-window-bounds.md) | C32 post 完整窗口边界检查 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-143](EXP-143-windows-vit-delayed-second-prime.md) | ViT 扩张第二 K 步延迟 prime | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-144](EXP-144-windows-vit-denominator-owner-broadcast.md) | ViT 分母归约的单半 wave 完成后广播 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。

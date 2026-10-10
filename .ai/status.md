@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 3，本提交完成后关闭 3。
-最近完成 [EXP-143](experiments/EXP-143-windows-vit-delayed-second-prime.md)：机制在ISA门槛被证伪，未进入packed候选回读、4000帧候选预热或完整性能ABBA。三个位置改变不构成加载与计算交错证据，mechanism_not_realized，不保留。
-下一步：检查ViT完整key块的probability denominator跨lane重构：在key permutation下仅交换实际需要的两个packed half部分和，保持原加法顺序。
+运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 4，本提交完成后关闭 4。
+最近完成 [EXP-144](experiments/EXP-144-windows-vit-denominator-owner-broadcast.md)：初测平均省0.002682 ms，组差-0.007319/+0.007591/+0.007774 ms，同路径控制最大组差0.009569 ms；唯一反序确认省0.013218 ms，组差+0.010330/+0.013058/+0.016266 ms，对应控制最大绝对组差0.010995 ms。确认表现改善，但初测不可分辨，确认最小组仍与控制相当；在一个确认额度内未建立可重复区分于控制的收益，unproven，不保留。
+下一步：检查ViT收缩128-channel chunk中原base+scalar offset的每轮地址计算，改用独立片段指针按原chunk步长递增；要求ISA减少地址指令并保持逐项加载和MMA顺序。
 
 ## 本轮证据
 
@@ -17,7 +17,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 
 - EXP-141：mechanism_not_realized；提交 f673b7b5425bf6322945c0dd93543b758cd76994。
 - EXP-142：unproven；提交 b2338215ea5addc0453b811d397ca5a54051097d。
-- EXP-143：mechanism_not_realized；提交 本提交。
+- EXP-143：mechanism_not_realized；提交 c141f5a87b0ec8b9a68d7d9b9917625dad9f97fa。
+- EXP-144：unproven；提交 本提交。
 
 ## 继承状态与边界
 
