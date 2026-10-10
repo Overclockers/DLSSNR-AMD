@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261011-001700-ten9070xt`，上限 10；已启动 1，本提交完成后关闭 1。
-最近完成 [EXP-156](experiments/EXP-156-windows-c256-project-residual-gain-reuse.md)：按 mechanism_not_realized 关闭；没有完整宿主性能 A/B，不声明提速或退化。本轮保留收益仍为0 ms。
-下一步：调查 FFWD Q0 配对权重读取后的独立 MMA 分组，保持每个累加器的 K 顺序。十次完成并保存核验后执行用户指定关机。
+运行 `20261011-001700-ten9070xt`，上限 10；已启动 2，本提交完成后关闭 2。
+最近完成 [EXP-157](experiments/EXP-157-windows-ffwd-q0-weight-grouped-mma.md)：初测候选增加0.004226 ms，各组方向不一致；同路径控制节省0.004661 ms。唯一反序确认节省0.001869 ms，低于确认控制0.004210 ms。方向未跨次复现，收益未能区别于控制波动，按unproven关闭，不保留。
+下一步：调查 ViT key fragment 的逐维读取与即时双 query 消费，针对现有完整K/V预取和logit batching未缩短的K片段生存区间；十次完成保存核验后关机。
 
 ## 本轮证据
 
@@ -15,7 +15,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 100% 模型尺度、单次 NR、完整宿主 R11G11B10、depth=3；四批基线：10.930771 / 10.922131 / 10.921556 / 10.919724 ms。
 本轮保留数量：0；历史收益不重复计入本轮。
 
-- EXP-156：mechanism_not_realized；提交 本提交。
+- EXP-156：mechanism_not_realized；提交 5b989885aa4a3e28c3d8f1e364bcbc27ce7f12fb。
+- EXP-157：unproven；提交 本提交。
 
 ## 继承状态与边界
 
