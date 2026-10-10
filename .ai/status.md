@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-224000-ten9070xt`，上限 10；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-149](experiments/EXP-149-windows-ffwd-activation-immediate-consumer.md)：unproven，不保留。初测10.962463→10.964881 ms，节省−0.002418 ms，三组+0.003360/+0.002714/−0.013327 ms。唯一反序确认11.017302→11.016680 ms，节省+0.000622 ms，三组−0.003670/+0.005150/+0.000385 ms。初测控制组差+0.010939/−0.021532 ms，确认控制−0.003208/+0.007809 ms；候选收益方向混合且落入对照波动，没有删样或追加第三轮。
-下一步：继续第5/10项：C256最终下采样projection按统一shear identity条件分离循环。
+运行 `20261010-224000-ten9070xt`，上限 10；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-150](experiments/EXP-150-windows-c256-downsample-identity-loop-split.md)：regressed，不保留。完整路径10.990270→11.034662 ms，平均慢0.044392 ms。三组均慢0.052858/0.048978/0.031339 ms；同路径组差−0.014424/−0.004173 ms。即使重复分支消除和VGPR下降已经实现，整网仍退化；原始批次全部保留。初筛已足以拒绝，未消耗追加反序确认额度。
+下一步：继续第6/10项：ViT context延后V读取，只保留两组已量化概率并立即消费V片段。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-146：mechanism_not_realized；提交 a5eb50b96a8e538ed4a77c918f6394de532f7e23。
 - EXP-147：mechanism_not_realized；提交 deab61bce3497f898ad3df36cc75fd3a38630187。
 - EXP-148：no_codegen_change；提交 65f420cb87cbabc362638990d5a12498a10063b6。
-- EXP-149：unproven；提交 本提交。
+- EXP-149：unproven；提交 579f9544cdb1fb5f1231c35f5725066fe8a280a1。
+- EXP-150：regressed；提交 本提交。
 
 ## 继承状态与边界
 
