@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 2，本提交完成后关闭 2。
-最近完成 [EXP-142](experiments/EXP-142-windows-post-full-window-bounds.md)：初测平均省0.004037 ms，三组方向混合；唯一反序确认平均慢0.002001 ms，组差-0.010692/+0.006728/-0.002038 ms。对应确认同路径控制平均差0.006735 ms，最大组差0.010209 ms。没有可重复且区别于控制波动的完整链路收益，unproven，不保留。
-下一步：研究ViT扩张KFRAG=2的第二步prime延迟消费，检验能否缩短操作数生命周期并实现load与首步WMMA交错；区别于仅交换weight/input加载顺序。
+运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 3，本提交完成后关闭 3。
+最近完成 [EXP-143](experiments/EXP-143-windows-vit-delayed-second-prime.md)：机制在ISA门槛被证伪，未进入packed候选回读、4000帧候选预热或完整性能ABBA。三个位置改变不构成加载与计算交错证据，mechanism_not_realized，不保留。
+下一步：检查ViT完整key块的probability denominator跨lane重构：在key permutation下仅交换实际需要的两个packed half部分和，保持原加法顺序。
 
 ## 本轮证据
 
@@ -16,7 +16,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 本轮保留数量：0；历史收益不重复计入本轮。
 
 - EXP-141：mechanism_not_realized；提交 f673b7b5425bf6322945c0dd93543b758cd76994。
-- EXP-142：unproven；提交 本提交。
+- EXP-142：unproven；提交 b2338215ea5addc0453b811d397ca5a54051097d。
+- EXP-143：mechanism_not_realized；提交 本提交。
 
 ## 继承状态与边界
 
