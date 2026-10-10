@@ -4,9 +4,9 @@
 
 ## 当前工作
 
-运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 4，本提交完成后关闭 4。
-最近完成 [EXP-144](experiments/EXP-144-windows-vit-denominator-owner-broadcast.md)：初测平均省0.002682 ms，组差-0.007319/+0.007591/+0.007774 ms，同路径控制最大组差0.009569 ms；唯一反序确认省0.013218 ms，组差+0.010330/+0.013058/+0.016266 ms，对应控制最大绝对组差0.010995 ms。确认表现改善，但初测不可分辨，确认最小组仍与控制相当；在一个确认额度内未建立可重复区分于控制的收益，unproven，不保留。
-下一步：检查ViT收缩128-channel chunk中原base+scalar offset的每轮地址计算，改用独立片段指针按原chunk步长递增；要求ISA减少地址指令并保持逐项加载和MMA顺序。
+运行 `20261010-210227-efficient-five9070xt`，上限 5；已启动 5，本提交完成后关闭 5。
+最近完成 [EXP-145](experiments/EXP-145-windows-vit-contract-carried-fragment-addresses.md)：编译器将两种地址表达式正规化为同一程序，no_codegen_change，不保留；未启动packed候选检查、4000帧候选预热或完整性能ABBA。五个已计费假设完成：三项在ISA阶段关闭，两项精确通过但性能收益未证明。本轮新增保留代码/确认GPU毫秒收益均为0。工具已落地：无缓存基线/新builder70文件精确一致，两仓各65个缓存shader与独立clean相同，10项工具测试通过；宿主shader暖缓存壁钟23.228→5.540秒，约少76.1%，此数不含runtime/可执行重建，也不是GPU提速。按阶段保存预处理、构建、数值/ISA和计时壁钟；本轮三项没有触发完整长测。
+下一步：本轮5/5预算耗尽，停止（budget_exhausted），不自动启动新运行。后续新预算优先采用独立算子中间值检查与局部NoContraction范围，结合EXP-028已验证加载等待研究；只有完整链路可重复收益才保留。
 
 ## 本轮证据
 
@@ -18,7 +18,8 @@ RX 9070 XT / 26.8.1 (LLPC)，2258×1270、2368×1280 工作尺寸、800 tokens�
 - EXP-141：mechanism_not_realized；提交 f673b7b5425bf6322945c0dd93543b758cd76994。
 - EXP-142：unproven；提交 b2338215ea5addc0453b811d397ca5a54051097d。
 - EXP-143：mechanism_not_realized；提交 c141f5a87b0ec8b9a68d7d9b9917625dad9f97fa。
-- EXP-144：unproven；提交 本提交。
+- EXP-144：unproven；提交 caed58b64ce0fda14fbe2842e6712aacb77e281d。
+- EXP-145：no_codegen_change；提交 本提交。
 
 ## 继承状态与边界
 
@@ -31,3 +32,15 @@ EXP-028 只有最终 detailed decoder 结果可用于指令研究；C256 DS 样�
 严格保持数值、权重、归约和行为；游戏测量继续暂缓，无安装、部署、打包或发布；核心实验记录按技能推送 main-experiment，宿主不推送。
 恢复发布前仍需核对 EXP-012/015 的 runtime shader 分发/卸载闭包。
 核心实验只使用 main-experiment，宿主修改只使用 customer-mochi-backed；本轮为五次无损实验，不关机、不启动后台自动续跑。新性能批次先过精确输出/ISA门槛，按阶段保存壁钟。
+
+## 本轮停止条件
+
+本提交关闭第 5 项后，已启动/关闭/上限为 5/5/5，预算耗尽。
+停止原因为 budget_exhausted；最终提交与产物核验写入本机 ledger。
+本轮保留代码数量为 0；未保留原型均在忽略目录，无未提交实现改动或恢复需求。
+
+## 提效工具与本轮采用
+
+提交 `29f1b93`：opt-in shader缓存、source-root宿主独立builder、递归clean对照、精确输出与driver机制绑定门槛、阶段壁钟。
+10项工具检查通过；两仓各65个缓存模块与clean一致；宿主shader壁钟23.228→5.540秒（暖缓存，不含DLL/可执行构建；不是GPU收益）。
+EXP-141/143/145在ISA阶段关闭；EXP-142/144通过精确输出和机制门槛后完整测量，收益均未证明。本轮新增保留GPU收益0 ms。

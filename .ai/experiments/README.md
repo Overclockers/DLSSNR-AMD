@@ -1,9 +1,11 @@
 # 优化实验
 
-已记录至 EXP-144；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
-EXP-131–140 完成新一轮 10/10 无损优化尝试：1 项 retained、7 项 unproven、2 项 mechanism_not_realized。
+已记录至 EXP-145；EXP-001/002/007/009/011/012/013/044/048/056/061/076/088/131 保留优化，其余轮次未建立可靠新收益。
+EXP-141–145 完成提效工具落地后的 5/5 无损尝试：2 项 mechanism_not_realized、2 项 unproven、1 项 no_codegen_change；本轮新增保留收益 0 ms。
+提交 `29f1b93` 加入 shader 缓存、精确输出/driver 机制门槛与阶段壁钟；三项在 ISA 阶段提前关闭。五次记录均推送核心 main-experiment，宿主没有新改动或推送。
+此前 EXP-131–140 完成 10/10 无损优化尝试：1 项 retained、7 项 unproven、2 项 mechanism_not_realized。
 EXP-131 保留 FFWD 首步权重预取消费展开，完整离线 NR 初测省 0.035623 ms、反序确认省 0.035626 ms（约 0.32%）；已完成两套配方的精确验证。
-本轮预算耗尽；核心实验提交推送 main-experiment，宿主保留提交 f526a6d7c8bd6e69c5bc15e6ef6bdba379515cf4 仅留本地 customer-mochi-backed。
+该十次运行预算已耗尽；核心实验提交推送 main-experiment，宿主保留提交 f526a6d7c8bd6e69c5bc15e6ef6bdba379515cf4 仅留本地 customer-mochi-backed。
 此前 EXP-126–130 的 5/5 无损尝试均未保留；其独立 context 链交错改变了实际 WMMA 调度，但没有可靠完整路径收益。
 EXP-125 的 C256 DS bias 连续面板已实现且静态输出精确，但 VGPR 229→230，触发既定资源停止门槛，不保留。
 EXP-124 的 C256 DS QK 分数逐片段消费静态输出精确，但实际加载/WMMA/指数生成顺序未变，机制未实现，不保留。
@@ -165,6 +167,7 @@ EXP-028 恢复旧 SQTT 捕获的地址/控制流，获得经过时序检查的 C
 | [EXP-142](EXP-142-windows-post-full-window-bounds.md) | C32 post 完整窗口边界检查 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-143](EXP-143-windows-vit-delayed-second-prime.md) | ViT 扩张第二 K 步延迟 prime | 未保留；mechanism_not_realized | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 | [EXP-144](EXP-144-windows-vit-denominator-owner-broadcast.md) | ViT 分母归约的单半 wave 完成后广播 | 未保留；unproven | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
+| [EXP-145](EXP-145-windows-vit-contract-carried-fragment-addresses.md) | ViT 收缩的片段地址循环携带 | 未保留；no_codegen_change | 见记录中的精确检查与未测项 | 两仓生产未改 | 用户暂缓 |
 
 新增实验使用 `EXP-001-short-description.md`，编号为记录标识，不是产品版本。
 结果使用明确状态：待执行、有效、无收益、回退、待验证。注明结果适用的 GPU、驱动和尺寸。
