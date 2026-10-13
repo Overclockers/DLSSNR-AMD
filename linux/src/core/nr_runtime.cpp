@@ -355,6 +355,10 @@ struct Runtime::Impl {
     Preprocess prep_last{};
     std::chrono::steady_clock::time_point prep_metered{};
     uint32_t prep_gen{}, prep_gen_single{};
+    // The pre block's noise seed on frames without a motion source (Runtime::record, Controls::noise_every_frame):
+    // the DLL's counter moves on every launch whatever the motion vectors (FUN_180060cf0 copies +0xc8 into the
+    // packet and increments it), and Reset zeroes it (FUN_1800616e0).
+    uint32_t plain_seed{};
     float white_point{1.0f};
     // Model Resolution: the network runs at mw x mh, the frame is width x
     // height. When they differ, `keep_full` holds the frame as handed over
@@ -709,7 +713,7 @@ struct Runtime::Impl {
         if (!d.pool) {
             const VkDescriptorPoolSize sizes[] = {
                 {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
-                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4}};
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4}};
             VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
             pi.maxSets = 2; pi.poolSizeCount = 3; pi.pPoolSizes = sizes;
             ok = vkCreateDescriptorPool(dev, &pi, nullptr, &d.pool) == VK_SUCCESS;
@@ -744,12 +748,18 @@ struct Runtime::Impl {
                 d.post[0] = kernel_set(dev, d.pool, *plain_post, {a, a, w, w, w}, {&surf0, &surf1, &cim});
                 ok = d.pre[0] && d.post[0];
             } else {
-            d.pre[c] = t.hp ? kernel_set(dev, d.pool, t.pre_pp[c], t.pre_buffers, {&cim, &mim, &t.hist(c), &dim, &t.hpass})
-                            : kernel_set(dev, d.pool, t.pre_pp[c], t.pre_buffers, {&cim, &mim, &t.hist(c), &dim});
-            d.post[c] = t.hp ? kernel_set(dev, d.pool, t.post_pp[c], t.post_buffers,
-                                          {&surf0, &t.hist_store[c ^ 1u], &cim, &mim, &t.hist(c), &t.hpass})
-                             : kernel_set(dev, d.pool, t.post_pp[c], t.post_buffers,
-                                          {&surf0, &t.hist_store[c ^ 1u], &cim, &mim, &t.hist(c)});
+            // One pass: this parity's ping-pong pre and post. More (no ping-pong, `c` 0): the pre and post
+            // every pass runs, the model's write going to surf1 as in their own sets.
+            const nrvk::Kernel& pre_k = t.pingpong ? t.pre_pp[c] : t.pre;
+            const nrvk::Kernel& post_k = t.pingpong ? t.post_pp[c] : t.post;
+            nrvk::Context::Image surf1 = s.surf1;
+            nrvk::Context::Image* written = t.pingpong ? &t.hist_store[c ^ 1u] : &surf1;
+            d.pre[c] = t.hp ? kernel_set(dev, d.pool, pre_k, t.pre_buffers, {&cim, &mim, &t.hist(c), &dim, &t.hpass})
+                            : kernel_set(dev, d.pool, pre_k, t.pre_buffers, {&cim, &mim, &t.hist(c), &dim});
+            d.post[c] = t.hp ? kernel_set(dev, d.pool, post_k, t.post_buffers,
+                                          {&surf0, written, &cim, &mim, &t.hist(c), &t.hpass})
+                             : kernel_set(dev, d.pool, post_k, t.post_buffers,
+                                          {&surf0, written, &cim, &mim, &t.hist(c)});
             ok = d.pre[c] && d.post[c];
             }
         }
@@ -1433,6 +1443,30 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
                  impl_->keep_native ? "in its own format" : "as RGBA32F",
                  impl_->store_native ? "stored in its own format" : "RGBA32F, converted on the way back");
     }
+    // At the frame's extent, one pass, the input copied in the frame's own format (direct_in), no
+    // native compose: the transfer pass stores the answer in that format too, into keep_full, with the
+    // alpha pass's rounding (store_native, as below 100%), so there is no alpha pass and the write-back
+    // is a copy. The formats whose store is the write-back blit's own conversion (direct_out's).
+    // NR_UNSCALED_STORE=0: the RGBA32F answer, the alpha pass and the blit, as before.
+    if (!impl_->scaled && impl_->direct_in && !config.native_compose && config.max_passes == 1 &&
+        !config.linear_input && !config.preprocess && !mask_config.width) {
+        const char* env = std::getenv("NR_UNSCALED_STORE");
+        const VkFormat cf = config.colour_format;
+        const VkFormat keep_format = transfer == Transfer::Encoded ? unorm : cf;
+        const bool listed = impl_->round_u8 || cf == VK_FORMAT_R16G16B16A16_SFLOAT ||
+            cf == VK_FORMAT_R16G16B16A16_UNORM || cf == VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+        VkFormatProperties3 k3{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3};
+        VkFormatProperties2 k2{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &k3};
+        vkGetPhysicalDeviceFormatProperties2(host.physical, keep_format, &k2);
+        const VkFormatFeatureFlags2 kf = k3.optimalTilingFeatures;
+        if (!(env && !std::atoi(env)) && listed && (kf & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT) &&
+            (kf & VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT) && (kf & VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT)) {
+            impl_->store_native = true;
+            impl_->keep_full = s.ctx.image(config.width, config.height, keep_format, true, true, true);
+            s.ctx.transition(impl_->keep_full, VK_IMAGE_LAYOUT_GENERAL);
+            nr::logf("[nr] answer stored in the frame's format by the transfer pass: no alpha pass, write-back copied");
+        }
+    }
     if (config.max_passes > 1) {
         if (mask_config.width) throw std::invalid_argument("the control mask path does not support more than one pass");
         impl_->shown_keep = s.ctx.image(mw, mh, VK_FORMAT_R32G32B32A32_SFLOAT, true);
@@ -1496,9 +1530,10 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
         nrvk::Context::Image* shown = config.max_passes > 1 ? &impl_->shown_keep : &s.tex_in;
         nrvk::Context::Image* keep = impl_->scaled ? &impl_->keep_full
                                      : impl_->linear ? &impl_->keep : shown;
-        // Unscaled, the two enlargement bindings are never read; the answer stands in.
-        nrvk::Context::Image* up_r = impl_->scaled ? &impl_->up_result : answer;
-        nrvk::Context::Image* up_s = impl_->scaled ? &impl_->up_shown : answer;
+        // Unscaled, the two enlargement bindings are never read; the model's answer stands in (an
+        // RGBA32F image, as they are declared).
+        nrvk::Context::Image* up_r = impl_->scaled ? &impl_->up_result : &s.surf0;
+        nrvk::Context::Image* up_s = impl_->scaled ? &impl_->up_shown : &s.surf0;
         impl_->transfer_pass.create(s.ctx, (adapters / transfer_spv).string(), {}, sizeof(TransferPush),
                                {&s.surf0, shown, keep, answer, up_r, up_s});
         impl_->transfer_binds = {s.surf0, *shown, *keep, *answer, *up_r, *up_s};
@@ -1757,7 +1792,8 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
     // Only the 8-bit path needs the private transfer image: it exists to keep an
     // *_SRGB view from applying its transfer function to the bits, not to
     // convert anything. The wide Wayland formats blit straight through.
-    if(transfer == Transfer::Encoded) {
+    // (Not with the answer stored in the frame's format at its extent: in and out are copies there.)
+    if(transfer == Transfer::Encoded && !(impl_->store_native && !impl_->scaled)) {
         auto& im=impl_->encoded;im.w=config.width;im.h=config.height;im.format=unorm;
         VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         info.imageType=VK_IMAGE_TYPE_2D;info.format=unorm;info.extent={im.w,im.h,1};
@@ -1815,6 +1851,11 @@ void Runtime::release_feature(uint64_t feature) {
     if (impl_->bound_feature == feature) impl_->bound_feature = 0;
 }
 
+void Runtime::forget_history() {
+    impl_->temporal.latch = false;
+    for (auto& f : impl_->features) f.second.latch = false;
+}
+
 uint32_t Runtime::live_features() const { return uint32_t(impl_->features.size()); }
 
 Runtime::TemporalHistoryView Runtime::temporal_history() const {
@@ -1829,6 +1870,11 @@ Runtime::TemporalHistoryView Runtime::temporal_history() const {
 }
 
 RecordResult Runtime::record(VkCommandBuffer cmd, const ColourFrame& frame, const Controls& c) {
+    return record(cmd,frame,c,nullptr).frame;
+}
+
+RecordResult Runtime::record(VkCommandBuffer cmd, const ColourFrame& frame, const Controls& c, bool reset) {
+    if (reset) impl_->plain_seed = 0;
     return record(cmd,frame,c,nullptr).frame;
 }
 
@@ -1991,11 +2037,11 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         engine->depth.format == VK_FORMAT_R32_SFLOAT && (engine->depth.usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
         engine->depth_x == 0 && engine->depth_y == 0 &&
         engine->depth.width == impl_->temporal.depth.w && engine->depth.height == impl_->temporal.depth.h;
-    // The motion vectors in place: any engine frame with one pass and the
-    // ping-pong sets, a sampled image and a linearly filterable format.
+    // The motion vectors in place: any engine frame with a sampled image in a
+    // linearly filterable format, whatever the pass count (every pass reads the
+    // frame's vectors), as NVIDIA's DLL reads them.
     const bool motion_direct =
-        NR_DIRECT_MOTION && !impl_->motion_src_failed && engine && temporal && !mask && passes == 1 &&
-        impl_->temporal.pingpong && engine->motion.image &&
+        NR_DIRECT_MOTION && !impl_->motion_src_failed && engine && temporal && !mask && engine->motion.image &&
         (engine->motion.usage & VK_IMAGE_USAGE_SAMPLED_BIT) && impl_->filters_linearly(engine->motion.format);
     // (research NR_DIRECT_STORE=1): the post block stores into the frame itself.
     // With a separate target (storage-capable) the post block stores into it and the
@@ -2405,6 +2451,11 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         b.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;b.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,nullptr,1,&b,0,nullptr);
     }
+    if (!temporal && !mask) {
+        // No motion source: the seed is 0 unless Controls::noise_every_frame, then the DLL's counter.
+        if (c.noise_every_frame) pre_seed = impl_->plain_seed++;
+        else impl_->plain_seed = 0;
+    }
     // Bind this feature's history: copy the previously bound feature's state out
     // and this one's in. Only on a change, so the single-feature case records
     // nothing at all here.
@@ -2509,7 +2560,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
             // This frame's noise seed, computed in the shader: the precomputed
             // field is seed 0's.
             uint8_t pre_push[kPrePushBytes];
-            if (temporal && step.k == t.original_pre && pre_seed) {
+            if ((temporal ? step.k == t.original_pre : !mask && step.k == impl_->plain_pre) && pre_seed) {
                 if (step.push_bytes != kPrePushBytes)
                     throw std::runtime_error("temporal pre block: unexpected push size");
                 const uint32_t no_field = 0;

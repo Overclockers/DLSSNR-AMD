@@ -93,6 +93,10 @@ struct Controls {
     // tone zeroed. Empty is exactly the behaviour that shipped before.
     std::vector<PassControls> per_pass{};
     Preprocess preprocess{};
+    // A frame without motion vectors (Runtime::record): the pre block's noise seed moves every frame, as the DLL's
+    // counter does whatever the motion vectors. Off (the default): the seed stays 0 - without a history to average
+    // the noise, a moving seed shimmers on a still picture.
+    bool noise_every_frame = false;
 };
 
 struct HostDevice {
@@ -347,6 +351,9 @@ public:
     // caller resources; neither overload acquires game guides or supplies temporal
     // history, depth/motion integration or a Present hook by itself.
     RecordResult record(VkCommandBuffer, const ColourFrame&, const Controls&);
+    // The same, for a frame the caller has a Reset flag for (DLSSNR.Reset): with Controls::noise_every_frame the
+    // seed starts again from 0 on it, as the DLL's counter does.
+    RecordResult record(VkCommandBuffer, const ColourFrame&, const Controls&, bool reset);
     ControlMaskResult record(VkCommandBuffer, const ColourFrame&, const Controls&, const ControlMaskFrame*);
     // Named rather than overloaded: `record(cmd, frame, controls, nullptr)` must
     // keep meaning what it already means to every existing caller.
@@ -366,6 +373,9 @@ public:
     // number of later recordings on, which is the same reasoning as OptiScaler's
     // own 32-evaluate parking of a retired feature. Never blocks.
     void release_feature(uint64_t feature);
+    // Every feature's next frame runs as a new feature's (no history read, the noise seed from 0), as after a
+    // Reset. For a network that served nothing for a while and is taken up again (Session::select_runtime).
+    void forget_history();
     // How many features currently hold temporal state, for the log.
     uint32_t live_features() const;
 

@@ -1,0 +1,4 @@
+{
+  global: nr_control_GetInstanceProcAddr; nr_control_GetDeviceProcAddr;
+  local: *;
+};

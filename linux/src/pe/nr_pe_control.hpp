@@ -1,0 +1,23 @@
+#pragma once
+// Our side of NR Control (the OptiScaler routes' menu, a Linux Vulkan layer: linux/src/layer/nr_control_layer.cpp),
+// through <game>/dlssnr-amd/control.bin (nr_control_shared.hpp): what NR is doing, for the menu to show; and, while
+// the menu draws on a Wayland surface, the game window's keyboard and mouse for it (a layer cannot read them there),
+// kept from the game while the menu is open.
+#include <cstdint>
+
+namespace nr::pe::control {
+
+struct Status {
+    uint32_t route = 1;             // 1 OptiScaler D3D12, 2 OptiScaler Vulkan
+    bool renodx = false, nr_on = true, preprocess = false, building = false;
+    float gpu_ms = 0.f, network_ms = 0.f;
+    uint32_t width = 0, height = 0, nr_width = 0, nr_height = 0, passes = 1;
+    uint32_t render_width = 0, render_height = 0;   // the game's render extent (the depth guide's), 0 unknown
+    uint32_t placement = 0;         // 0 not known, 1 after the upscaler, 2 before it (OptiScaler's frame info)
+    uint32_t output_width = 0, output_height = 0;   // the upscaler's output (the game's DLSS evaluate), 0 unknown
+    int int4 = 2;                   // 0 the default network, 1 int4 mixed, 2 not installed
+};
+// From each evaluate; written about four times a second. The first call starts the Wayland input watcher.
+void report(const Status& s);
+
+}  // namespace nr::pe::control

@@ -17,6 +17,7 @@
 // immediately before the upscale it is feeding.
 #include "nr_pe_interop.hpp"
 #include "nr_runtime.hpp"
+#include "nr_renodx.hpp"
 #include <memory>
 #include <string>
 
@@ -115,6 +116,41 @@ class Session {
                    const EngineResources& resources, const Controls& controls,
                    ID3D12Resource* input = nullptr, D3D12_RESOURCE_STATES input_state = D3D12_RESOURCE_STATE_COMMON);
 
+    // The RenoDX-style option on the OptiScaler route ([RenoDX], nr_renodx.hpp): `input` (the frame as
+    // OptiScaler hands it over, see nr_pe_optifix.hpp renodx_route) goes through RenoDX's processing around
+    // the network into `output`. One stage per feature (each holds RenoDX's per-stream state: the autoscale
+    // divisor, the Detail stability history). Returns false without recording anything while the network
+    // builds or when the frame cannot be taken (the caller then copies the input over, which OptiScaler
+    // outputs as it is).
+    struct RenoDXFrame {
+        bool hdr_flag = false;        // the game's colour is HDR (OptiScaler's own judgement)
+        bool after_upscale = true;    // NR runs on the upscaler's output
+        renodx::Settings settings{};
+        // The game's exposure as DLSS was given it (OptiScaler route only): the exposure texture and its state
+        // during the evaluation, DLSS.Pre.Exposure, DLSS.Exposure.Scale, the AutoExposure create flag.
+        ID3D12Resource* exposure = nullptr;
+        D3D12_RESOURCE_STATES exposure_state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        float pre_exposure = 1.0f, exposure_scale = 1.0f;
+        bool auto_exposure = false, create_flags_known = true;
+        // OptiScaler's Vulkan path: the game's exposure image, in GENERAL (no image: none).
+        VkImage vk_exposure = VK_NULL_HANDLE;
+        VkFormat vk_exposure_format = VK_FORMAT_UNDEFINED;
+        uint32_t vk_exposure_width = 0, vk_exposure_height = 0;
+        Preprocess preprocess{};      // [Preprocess] this frame (it runs inside RenoDX's processing, not the network's)
+        // The ReShade routes are RenoDX's Present hook point: the encoding (1 SDR, 2 HDR10, 3 scRGB; 0 = the OptiScaler
+        // route's DLSS-output rules) and the HDR diffuse white in nits.
+        uint32_t present = 0;
+        float present_white_nits = 203.0f;
+        // OptiScaler's finished picture (its present path; with the option on only for RenoDX's NR screenshot), and
+        // whether this frame carries no NR from an inline evaluate - the final picture a screenshot may take.
+        bool finished = false;
+        bool clean = true;
+    };
+    bool run_renodx(ID3D12Device* device, ID3D12GraphicsCommandList* list,
+                    ID3D12Resource* output, D3D12_RESOURCE_STATES output_state,
+                    const EngineResources& resources, const Controls& controls,
+                    ID3D12Resource* input, D3D12_RESOURCE_STATES input_state, const RenoDXFrame& frame);
+
     // D3D11, through DXVK. There is no command list to record into, so this one
     // owns a command buffer, records into it, and submits it on DXVK's own queue
     // between a flush and the queue lock - the sequence DXVK documents for
@@ -148,6 +184,8 @@ class Session {
         // (`swapchain::get_color_space`). Set it and the runtime encodes the
         // frame for the model exactly as it does an upscaler's input.
         bool linear_hdr{};
+        // The RenoDX-style option: RenoDX's processing around the network instead (needs `motion`).
+        const RenoDXFrame* renodx{};
     };
     bool run_d3d11(const D3D11Frame& frame, const Controls& controls);
 
@@ -174,6 +212,9 @@ class Session {
         VkImage depth{}; VkImageLayout depth_layout{VK_IMAGE_LAYOUT_UNDEFINED};
         VkFormat depth_format{VK_FORMAT_UNDEFINED};
         uint32_t depth_width{}, depth_height{};
+        // The guides' usage as far as the caller knows it (0: not known). A sampled motion-vector image is
+        // read in place by the network, as the DLL reads it; without SAMPLED it is blitted into a field of ours.
+        VkImageUsageFlags motion_usage{}, depth_usage{};
         // As EngineResources: the part of each guide the game rendered into. The *_width/_height above
         // stay the allocation, so both numbers are available.
         Subrect depth_subrect{};
@@ -192,6 +233,9 @@ class Session {
         // needs transfer source and destination usage, and is left in colour_layout); run_vulkan
         // then returns `colour`. Otherwise the answer is in an image of ours.
         bool in_place{};
+        // The RenoDX-style option (needs `motion`): RenoDX's processing around the network, from `colour` into
+        // `output` (or back into `colour` when there is no output or in_place is set).
+        const RenoDXFrame* renodx{};
     };
     // A Vulkan game's own queue. The two D3D runtimes have an interop object to
     // ask for one; a Vulkan game has nothing of the sort, so the queue is learned
@@ -269,9 +313,12 @@ class Session {
     // own overlay shows for DLSS-NR, measured the same way: a timestamp pair
     // around the work, not a clock around the call. Smoothed; zero until the
     // first result is back, and zero on a queue with no timestamp support.
+    // With the RenoDX-style option: its whole stage a frame (every pass and its own work).
     float gpu_ms() const;
     // The network's part of gpu_ms (every pass); gpu_ms - network_ms is the route's own work.
     float network_ms() const;
+    // The running network's extent (0 x 0 before one is running).
+    void network_size(uint32_t* width, uint32_t* height) const;
 
     // What a host's UI shows: the network running and the one being built.
     struct State {

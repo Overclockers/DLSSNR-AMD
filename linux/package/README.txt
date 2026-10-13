@@ -20,25 +20,33 @@ The folder is the one that holds the game's exe (the one that actually runs - fo
 games it is <project>/Binaries/Win64, not the top folder with the launcher). The script lists
 the routes; you can also name one after the folder:
 
-    optiscaler  for games with a DLSS, FSR or XeSS option. OptiScaler does the upscaling and frame
-                generation, this project is its DLSS-NR backend. 64-bit package only.
-    reshade     for D3D10/11/12 games without a usable upscaler. ReShade + VORT provide
-                the motion vectors.
-    vulkan      Vulkan games, or D3D9 games (under Proton, DXVK turns D3D9 into Vulkan).
-    dx9         as vulkan, plus the depth direction for old D3D9 games.
-    remove      uninstall.
+    optiscaler             for games with a DLSS, FSR or XeSS option. OptiScaler does the upscaling and
+                           frame generation, this project is its DLSS-NR backend. 64-bit package only.
+    optiscaler-renodx      as optiscaler, with the picture before and after NR processed the RenoDX way
+                           (see "RenoDX style" below). 64-bit package only.
+    reshade-feeder         for D3D10/11/12 games without a usable upscaler. ReShade + VORT provide
+                           the motion vectors.
+    reshade-feeder-vulkan  Vulkan games, or D3D9 games (under Proton, DXVK turns D3D9 into Vulkan).
+    reshade-feeder-dx9     as reshade-feeder-vulkan, plus the depth direction for old D3D9 games.
+    remove                 uninstall.
+
+The earlier route names reshade, vulkan and dx9 are now reshade-feeder, reshade-feeder-vulkan and
+reshade-feeder-dx9.
 
 When it is done the script prints the line for the Steam launch options, for example:
 
     WINEDLLOVERRIDES="dxgi=n,b" %command%
+
+On optiscaler / optiscaler-renodx this line also has VK_ADD_LAYER_PATH and VK_INSTANCE_LAYERS, which
+the NR Control menu (see "Use") needs; copy the whole line.
 
 Use the i686 package for 32-bit games and the x86_64 package for 64-bit games.
 
 int4 mixed (optional, in both packages): part of the network runs in int4 and other lower
 precisions; faster, the picture differs somewhat. The installer asks once (Enter = do not install;
 not asked when not run in a terminal: not installed), or give --int4 or --no-int4. With it, the
-launch options the installer prints have two more entries, VK_ADD_LAYER_PATH and
-VK_INSTANCE_LAYERS; int4 mixed needs them, copy the whole line. It is on by default; Ctrl+F11 in
+launch options the installer prints have VK_ADD_LAYER_PATH and VK_INSTANCE_LAYERS (on the OptiScaler
+route they name NR Control's layer too); int4 mixed needs them, copy the whole line. It is on by default; Ctrl+F11 in
 game switches between int4 mixed and the default network (a switch builds the other network,
 it takes effect after a few seconds); settings are in [Int4Mixed] in dlssnr-amd.ini.
 With int4 mixed, NR takes much longer to take effect when a game starts. Until then the picture goes
@@ -70,10 +78,13 @@ It prints "599 entries, 140.9 MiB" when it succeeds. The file can then be copied
 
 After installation the game folder has
 --------------------------------------
-    dlssnr-amd/                  model and shaders; the run-time pipeline cache goes here too
+    dlssnr-amd/                  model and shaders; the run-time pipeline cache goes here too; on the
+                                 OptiScaler route also NR Control's Vulkan layer (control/)
     dlssnr-amd.ini               settings, written at install
     dlssnr-amd-install.txt       the installation record, which remove deletes by
 plus the route's own files (OptiScaler's or ReShade's DLLs, ini files, shaders).
+Screenshots of the RenoDX style go to NR Screenshots/ (made at the first screenshot, not removed by
+uninstall).
 
 Installing again (another route, another package, adding or dropping int4 mixed) first uninstalls by
 the installation record, and dlssnr-amd.ini is replaced by a fresh default file: earlier settings are
@@ -81,21 +92,39 @@ not kept, back the file up if you need them.
 
 Use
 ---
-optiscaler: turn on DLSS, FSR or XeSS in the game; Insert opens the OptiScaler menu, the NR
-            settings are on the DLSS Neural Rendering page.
+optiscaler / optiscaler-renodx: turn on DLSS, FSR or XeSS in the game; Insert opens the OptiScaler
+            menu. End opens NR Control, this project's own NR menu: it shows what NR is doing (frame
+            and network sizes, passes, NR's cost split into the network and the rest of the
+            processing), and switches int4 mixed (when installed) and Preprocess; on
+            optiscaler-renodx it also holds every NR setting (see "RenoDX style" below). Changes are
+            written to dlssnr-amd.ini at once and apply in the game within about a second. While the
+            menu is open it takes the keyboard and mouse; End or Esc closes it.
+            On the optiscaler route the other NR settings are on the DLSS Neural Rendering page of
+            the OptiScaler menu.
+            Works on X11 (XWayland, Proton's default) and Wayland (PROTON_ENABLE_WAYLAND=1). On
+            Wayland the menu reads the keyboard and mouse through the game window; a game that uses
+            only raw input may still receive input while the menu is open.
+            While the menu is closed it draws nothing and submits no GPU work.
             If the NR page keeps showing "Waiting for the upscaler to run", try
             [Spoofing] Dxgi=false in OptiScaler.ini (Dying Light: The Beast has needed it).
-reshade / vulkan / dx9: Home opens ReShade, the settings are on the Add-ons page; the same
+reshade-feeder routes: Home opens ReShade, the settings are on the Add-ons page; the same
             settings are kept in dlssnr-amd.ini in the game folder and changes apply live.
             Model resolution and Model passes of 5 or more rebuild the network; for the few
-            seconds of a rebuild the picture does not go through NR.
+            seconds of a rebuild the picture does not go through NR. Switching Model passes between
+            1 and 2 or more also rebuilds in the background; until it is done NR keeps running with
+            the previous number of passes.
+            NoiseEveryFrame in dlssnr-amd.ini (in the file only, default false): on frames without
+            motion vectors (DLSS5_MV not bound) the network's noise seed changes every frame, as in
+            NVIDIA's original; with no previous frame to average the noise, a still picture shimmers
+            slightly. false: a fixed seed.
             Below 100% Model resolution, Enlargement chooses how the model's result is enlarged
             back to full resolution: Matched residual (default) and Edge-aware lighting + colour
             enlarge the model's change and apply it to the full-resolution picture; Classic
             enlarges the model's output picture directly (scalers to choose from, FSR 1 among
             them).
             HDR: scRGB (linear) HDR is supported; HDR10 (PQ/HLG) pictures are not handled on these
-            routes, set the game to SDR or scRGB.
+            routes, set the game to SDR or scRGB. With the RenoDX style on, HDR10 (PQ) is handled too,
+            HLG is not.
 
 Preprocess (optional, off by default): [Preprocess] in dlssnr-amd.ini in the game folder (written
 at install; the ReShade routes also show it on the Add-ons page). It changes the picture the
@@ -104,6 +133,50 @@ Two uses: a personal look in any game (it departs from the original look; the re
 or worse), and games that do not hand their exposure to the upscaler, which it fixes (see 007 First
 Light below). Ctrl+F10 switches it for the current run, to compare. The file explains every
 setting.
+
+RenoDX style (optional, off by default): the processing around NR (how the picture is handed to NR
+and how NR's result is put back into the picture) follows RenoDX's DLSS5 add-on v8.5.0-rc10, with
+RenoDX's own shaders (MIT, licence in dlssnr-amd/shaders/renodx/RenoDX-LICENSE.txt). The NR network
+itself is the same.
+  - Switch: [RenoDX] Enabled in dlssnr-amd.ini, applied after a game restart. optiscaler-renodx
+    installs it on; on the reshade-feeder routes set it to 1 (the Add-ons page has the switch too).
+  - With it on, every NR setting is in [RenoDX]: on optiscaler-renodx in NR Control (End), on the
+    reshade-feeder routes on the Add-ons page, or edit the file. Apart from Enabled, changes apply in
+    the running game. The file explains every setting, and so does (?) in the menus. The settings
+    keep RenoDX's own names, defaults and ranges.
+  - optiscaler-renodx (with the RenoDX style on): OptiScaler only does the upscaling and frame
+    generation (its upscaler, sharpening and frame generation settings work as usual); the settings
+    on its DLSS Neural Rendering page have no effect (fixed while running: NR on, 1 pass, Model
+    resolution 100%, Peripheral compression / Finished Picture / Deferred / debug views off).
+    reshade-feeder routes: the NR settings in [DlssNr] have no effect.
+  - NR on/off (NeuralUplift; F6 in game switches it for the current run), the network's settings
+    (Intensity, Style, Local tone, Local structure, Skin structure, Character mask), NR before or
+    after the upscaler (NRHookPoint, OptiScaler route only; always after it when the game uses Ray
+    Reconstruction), the network's resolution (NRResolutionScale).
+  - Passes (NRPasses 1-4): each pass hands the previous pass's result to the network again. Passes
+    2, 3 and 4 each have their own strengths (Transfer / Color) and network settings; with "Same as
+    pass 1" on, the network settings follow pass 1, Intensity is always the pass's own.
+    NRUnlockPasses = 1 allows up to 30 passes (as OptiScaler's UnlockPasses; RenoDX itself stops at
+    4); passes 5 and later take pass 4's settings. Every pass runs the network once more, which
+    lowers the frame rate a lot.
+  - Adjust NR's look (NRLookMode and NRLook*): adjusts how much NR changed, directly on its result -
+    brighten, darken, colour, hue, shadows / midtones / highlights, broad lighting and detail, dark
+    halos, temporal smoothing. Off by default; off leaves the picture unchanged.
+  - Screenshot (F5, also a button in NR Control and on the Add-ons page): the same frame without
+    and with NR, saved to NR Screenshots/ in the game folder. By default the final picture: on the
+    reshade-feeder routes the picture sent to the display; on optiscaler-renodx NR moves to
+    OptiScaler's finished picture for one frame and moves back afterwards. HDR pictures are saved
+    as 16-bit PQ PNG (with cICP and ICC, so they stay HDR), SDR as 8-bit sRGB. JPEG, both PNG and
+    JPEG, or an extra side-by-side picture can be chosen; NRScreenshotSource = 2 saves the model's
+    input and output (for diagnosis, without the game's tone mapping and UI). Nothing is saved
+    while NR is off.
+  - The automatic mask (NRAutoMask) is off by default, as in RenoDX (the Character mask in
+    OptiScaler's menu on the optiscaler route is on by default); when it is on, skin follows only
+    Skin structure by default (NRSkinIndependent, as RenoDX).
+  - Preprocess can be used with it.
+  - On Vulkan games on the OptiScaler route the automatic mode does not use the game's exposure (the
+    game's AutoExposure flag is not available there) and computes it from the picture;
+    NRFeedMode = 2 forces the game's exposure.
 
 Logs: dlssnr-amd.log (and OptiScaler.log or ReShade.log), all in the game folder.
 

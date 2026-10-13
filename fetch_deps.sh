@@ -52,6 +52,44 @@ if [[ ! -x toolchain/glslang/bin/glslang ]]; then
 fi
 
 # ---- sources and headers ----------------------------------------------------------------------
+# Slang 2026.19 compiles the RenoDX-style option's shaders (linux/shaders/renodx, RenoDX's own HLSL); with this
+# exact release they are the same SPIR-V bytes as the tested ones.
+get artifacts/ref/downloads/slang-2026.19-linux-x86_64-glibc-2.28.tar.gz \
+    https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-x86_64-glibc-2.28.tar.gz \
+    bd7afcb0956dee9304f44ed115e9aaa7140704271b5c3294bcb237e3ae67adc7
+if [[ ! -x toolchain/slang-2026.19/bin/slangc ]]; then
+    mkdir -p toolchain/slang-2026.19
+    tar -C toolchain/slang-2026.19 -xzf artifacts/ref/downloads/slang-2026.19-linux-x86_64-glibc-2.28.tar.gz
+fi
+
+# ---- sources ----------------------------------------------------------------------------------
+# Dear ImGui (MIT) as OptiScaler-NR's source tree carries it, for NR Control (the OptiScaler route's NR menu, a
+# Linux Vulkan layer): the files it compiles, checked, into toolchain/imgui-nr, with this project's imconfig.h.
+repo artifacts/ref/OptiScaler-NR-src https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass.git \
+     f45ccf3a761df91450959d325ac0166cba5364c9                                      # v0.8.91 source
+if [[ ! -f toolchain/imgui-nr/imconfig.h ]]; then
+    mkdir -p toolchain/imgui-nr
+    for f in LICENSE.txt imgui.cpp imgui.h imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp imgui_internal.h \
+             imgui_impl_vulkan.cpp imgui_impl_vulkan.h imstb_rectpack.h imstb_textedit.h imstb_truetype.h; do
+        cp -- "artifacts/ref/OptiScaler-NR-src/OptiScaler/include/imgui/$f" toolchain/imgui-nr/
+    done
+    printf '#pragma once\n// Project configuration. Standard stb fonts; no reference-project FreeType hooks.\n' \
+        > toolchain/imgui-nr/imconfig.h
+fi
+(cd toolchain/imgui-nr && sha256sum -c --quiet -) <<EOF || { echo "checksum mismatch: toolchain/imgui-nr" >&2; exit 1; }
+c80c5789748d955c4a650562baa0d750494e2c7128c2ca66aaebe2e3c4e198bf  LICENSE.txt
+da877efff5dbfc130572e11881751e215e493f647515041195776b974b31dcae  imgui.cpp
+9300189bd23f5a920019fb006bf45b297bb389bad24dfdf12768fd04bfa6fc50  imgui.h
+4605107eb83713928a1e522b557d7ee22f9e77e5cfb4b09fe8e37c204456289d  imgui_draw.cpp
+5c8c575481cc5352510ed55d4dbddfd458268857c1d3be55d8d0ae8c86ad13fe  imgui_tables.cpp
+e4ac34e7bc9ef6509e41a1124dcdb460b995b7b56b64681ce924f384518b33e2  imgui_widgets.cpp
+7ea0356920f6a8f9b7d85eeead141ad9eadac4f87fdde125262a1b29c8c59aa2  imgui_internal.h
+c33a3f98fd7963e5508303f480a6d761198c8d22ad0609f4d23e0e3ff2af9e06  imgui_impl_vulkan.cpp
+4723ad0de0d2dc23e6e44871ff5370d3e239e59dc7d2f20d69cae8c33e5266f5  imgui_impl_vulkan.h
+2efa3d5f7d003c19743b15155dad9f46d9f9fc783a18893d703b431d3c990972  imstb_rectpack.h
+10777411bf758908aadaf7d73d4710d6ba0464f332f0015db9d1444c19456e6a  imstb_textedit.h
+87f08919ae8e7223451d0e9d06b62829075d3e920c9e6ad436db9d7e7427ffce  imstb_truetype.h
+EOF
 # DLSS5-Feeder (MIT): MinHook, the ReShade add-on headers and Dear ImGui under external/, and the
 # DLSS5_Feed.fx effect the ReShade route ships.
 repo artifacts/ref/DLSS5-Feeder https://github.com/jlrouzies-fr/DLSS5-Feeder.git \

@@ -170,6 +170,7 @@ bool parse(const std::string& path, Config& c, bool& legacy) {
         const std::string key = lower(trim(text.substr(0, equals)));
         const std::string value = trim(text.substr(equals + 1));
         if (name == "preprocess") { parse_preprocess_key(c.preprocess, key, value); continue; }
+        if (name == "renodx") { parse_renodx_key(c.renodx, key, value); continue; }
         if (name == "log") {
             if (key == "enabled") { if (auto b = parse_bool(value)) c.log_enabled = *b; }
             else if (key == "clearonstart") { if (auto b = parse_bool(value)) c.log_clear = *b; }
@@ -213,6 +214,7 @@ bool parse(const std::string& path, Config& c, bool& legacy) {
             else if (v == "fsr1" || v == "fsr" || v == "3") k.classic_scaler = 3;
         }
         else if (key == "history") c.history = number(value, 0, 1);
+        else if (key == "noiseeveryframe") { if (auto b = parse_bool(value)) k.noise_every_frame = *b; }
         else if (key == "whitepoint" || key == "white_point") c.white_point = number(value, 0.01f, 100.0f);
         else if (key.rfind("pass", 0) == 0 && key.size() > 5 && std::isdigit(static_cast<unsigned char>(key[4]))) {
             // Pass<N><Field>, or the old pass<N>_<field>.
@@ -232,6 +234,18 @@ bool parse(const std::string& path, Config& c, bool& legacy) {
     c.controls.passes = std::clamp(passes, 1, c.pass_limit());
     c.resolve();
     return true;
+}
+
+// RenoDX's SanitizeFloatKey / SanitizeEnumKey: a value outside [lo, hi] (or not a number) is the default.
+float renodx_float(const std::string& v, float def, float lo, float hi) {
+    char* end = nullptr;
+    const float x = std::strtof(v.c_str(), &end);
+    return end != v.c_str() && std::isfinite(x) && x >= lo && x <= hi ? x : def;
+}
+uint32_t renodx_enum(const std::string& v, uint32_t def, uint32_t lo, uint32_t hi) {
+    char* end = nullptr;
+    const long x = std::strtol(v.c_str(), &end, 10);
+    return end != v.c_str() && x >= long(lo) && x <= long(hi) ? uint32_t(x) : def;
 }
 
 // The [Preprocess] section of `path` alone into `p`. False if it could not be opened.
@@ -275,6 +289,614 @@ bool parse_preprocess_key(PreprocessConfig& p, const std::string& key, const std
     else if (key == "hotkey") p.hotkey = value;
     else if (key == "sound") { if (auto b = parse_bool(value)) p.sound = *b; }
     else return false;
+    return true;
+}
+
+// The field behind nr_renodx_keys.hpp's key `index` (renodx_keys::Kind says its type).
+void* renodx_field(RenoDXConfig& r, int index) {
+    auto& v = r.values;
+    switch (index) {
+        case 0: return &r.enabled;
+        case 1: return &v.nr_enabled;
+        case 2: return &r.toggle_key;
+        case 3: return &v.hook_point;
+        case 4: return &v.intensity;
+        case 5: return &v.style;
+        case 6: return &v.local_tone;
+        case 7: return &v.local_structure;
+        case 8: return &v.skin_structure;
+        case 9: return &v.auto_mask;
+        case 10: return &v.skin_independent;
+        case 11: return &v.passes;
+        case 12: return &v.unlock_passes;
+        case 13: return &v.chained_history;
+        case 14: return &v.pass_transfer[0];
+        case 15: return &v.pass_color[0];
+        case 16: return &v.pass_intensity[0];
+        case 17: return &v.pass_follow[0];
+        case 18: return &v.pass_style[0];
+        case 19: return &v.pass_local_tone[0];
+        case 20: return &v.pass_local_structure[0];
+        case 21: return &v.pass_skin_structure[0];
+        case 22: return &v.pass_auto_mask[0];
+        case 23: return &v.pass_transfer[1];
+        case 24: return &v.pass_color[1];
+        case 25: return &v.pass_intensity[1];
+        case 26: return &v.pass_follow[1];
+        case 27: return &v.pass_style[1];
+        case 28: return &v.pass_local_tone[1];
+        case 29: return &v.pass_local_structure[1];
+        case 30: return &v.pass_skin_structure[1];
+        case 31: return &v.pass_auto_mask[1];
+        case 32: return &v.pass_transfer[2];
+        case 33: return &v.pass_color[2];
+        case 34: return &v.pass_intensity[2];
+        case 35: return &v.pass_follow[2];
+        case 36: return &v.pass_style[2];
+        case 37: return &v.pass_local_tone[2];
+        case 38: return &v.pass_local_structure[2];
+        case 39: return &v.pass_skin_structure[2];
+        case 40: return &v.pass_auto_mask[2];
+        case 41: return &v.color_strength;
+        case 42: return &v.transfer_strength;
+        case 43: return &v.chroma_clamp_stops;
+        case 44: return &v.transfer_mode;
+        case 45: return &v.style_highlight_guard;
+        case 46: return &v.detail_stability;
+        case 47: return &v.resolution_scale;
+        case 48: return &v.follow_input_res;
+        case 49: return &v.look_upsample;
+        case 50: return &v.look_mode;
+        case 51: return &v.look_strength;
+        case 52: return &v.look_brighten;
+        case 53: return &v.look_darken;
+        case 54: return &v.look_colour;
+        case 55: return &v.look_hue;
+        case 56: return &v.look_shadows;
+        case 57: return &v.look_midtones;
+        case 58: return &v.look_highlights;
+        case 59: return &v.look_max_brighten;
+        case 60: return &v.look_max_darken;
+        case 61: return &v.look_max_colour;
+        case 62: return &v.look_tone;
+        case 63: return &v.look_detail;
+        case 64: return &v.look_detail_radius;
+        case 65: return &v.look_halo;
+        case 66: return &v.look_halo_bright;
+        case 67: return &v.look_stabilize;
+        case 68: return &v.look_stabilize_ms;
+        case 69: return &v.look_stabilize_detail;
+        case 70: return &v.sdr_black_restore;
+        case 71: return &v.display_pedestal;
+        case 72: return &v.codec_mode;
+        case 73: return &v.neural_floor_guard;
+        case 74: return &v.source_encoding;
+        case 75: return &v.linear_unit_nits;
+        case 76: return &v.proxy_anchor_nits;
+        case 77: return &v.paper_white_scale;
+        case 78: return &v.diffuse_white_nits;
+        case 79: return &v.pq_calibration;
+        case 80: return &v.feed_mode;
+        case 81: return &v.present_encoding;
+        case 82: return &v.present_white_nits;
+        case 83: return &v.present_white_source;
+        case 84: return &v.norm_governor;
+        case 85: return &v.norm_cut_aware;
+        case 86: return &v.norm_attack_stops;
+        case 87: return &v.norm_release_stops;
+        case 88: return &v.norm_slew_stops;
+        case 89: return &v.present_guides;
+        case 90: return &v.depth_mode;
+        case 91: return &v.mvec_scale_x;
+        case 92: return &v.mvec_scale_y;
+        case 93: return &r.screenshot_key;
+        case 94: return &r.screenshot_source;
+        case 95: return &r.screenshot_format;
+        case 96: return &r.screenshot_layout;
+        case 97: return &r.screenshot_jpeg_quality;
+        case 98: return &r.screenshot_max_mb;
+        default: return nullptr;
+    }
+}
+
+bool parse_renodx_key(RenoDXConfig& r, const std::string& key, const std::string& value) {
+    auto& v = r.values;
+    const renodx::Settings d{};
+    if (key == "enabled") { if (auto b = parse_bool(value)) r.enabled = *b; }
+    else if (key == "neuraluplift") { if (auto b = parse_bool(value)) v.nr_enabled = *b; }
+    else if (key == "nrtogglekey") r.toggle_key = value;
+    else if (key == "nrhookpoint") v.hook_point = renodx_enum(value, d.hook_point, 0, 2);
+    else if (key == "nrintensity") v.intensity = renodx_float(value, d.intensity, 0.0f, 2.0f);
+    else if (key == "nrstyle") v.style = renodx_enum(value, d.style, 0, 2);
+    else if (key == "nrlocaltone") v.local_tone = renodx_float(value, d.local_tone, 0.0f, 2.0f);
+    else if (key == "nrlocalstructure") v.local_structure = renodx_float(value, d.local_structure, 0.0f, 2.0f);
+    else if (key == "nrskinstructure") v.skin_structure = renodx_float(value, d.skin_structure, -1.0f, 1.0f);
+    else if (key == "nrautomask") { if (auto b = parse_bool(value)) v.auto_mask = *b; }
+    else if (key == "nrskinindependent") { if (auto b = parse_bool(value)) v.skin_independent = *b; }
+    else if (key == "nrpasses") v.passes = renodx_enum(value, d.passes, 1, 30);
+    else if (key == "nrunlockpasses") { if (auto b = parse_bool(value)) v.unlock_passes = *b; }
+    else if (key == "nrchainedhistory") { if (auto b = parse_bool(value)) v.chained_history = *b; }
+    else if (key == "nrpass2transfer") v.pass_transfer[0] = renodx_float(value, d.pass_transfer[0], 0.0f, 1.0f);
+    else if (key == "nrpass2color") v.pass_color[0] = renodx_float(value, d.pass_color[0], 0.0f, 1.0f);
+    else if (key == "nrpass2intensity") v.pass_intensity[0] = renodx_float(value, d.pass_intensity[0], 0.0f, 2.0f);
+    else if (key == "nrpass2followpass1") { if (auto b = parse_bool(value)) v.pass_follow[0] = *b; }
+    else if (key == "nrpass2style") v.pass_style[0] = renodx_enum(value, d.pass_style[0], 0, 2);
+    else if (key == "nrpass2localtone") v.pass_local_tone[0] = renodx_float(value, d.pass_local_tone[0], 0.0f, 2.0f);
+    else if (key == "nrpass2structure") v.pass_local_structure[0] = renodx_float(value, d.pass_local_structure[0], 0.0f, 2.0f);
+    else if (key == "nrpass2skin") v.pass_skin_structure[0] = renodx_float(value, d.pass_skin_structure[0], -1.0f, 1.0f);
+    else if (key == "nrpass2automask") { if (auto b = parse_bool(value)) v.pass_auto_mask[0] = *b; }
+    else if (key == "nrpass3transfer") v.pass_transfer[1] = renodx_float(value, d.pass_transfer[1], 0.0f, 1.0f);
+    else if (key == "nrpass3color") v.pass_color[1] = renodx_float(value, d.pass_color[1], 0.0f, 1.0f);
+    else if (key == "nrpass3intensity") v.pass_intensity[1] = renodx_float(value, d.pass_intensity[1], 0.0f, 2.0f);
+    else if (key == "nrpass3followpass1") { if (auto b = parse_bool(value)) v.pass_follow[1] = *b; }
+    else if (key == "nrpass3style") v.pass_style[1] = renodx_enum(value, d.pass_style[1], 0, 2);
+    else if (key == "nrpass3localtone") v.pass_local_tone[1] = renodx_float(value, d.pass_local_tone[1], 0.0f, 2.0f);
+    else if (key == "nrpass3structure") v.pass_local_structure[1] = renodx_float(value, d.pass_local_structure[1], 0.0f, 2.0f);
+    else if (key == "nrpass3skin") v.pass_skin_structure[1] = renodx_float(value, d.pass_skin_structure[1], -1.0f, 1.0f);
+    else if (key == "nrpass3automask") { if (auto b = parse_bool(value)) v.pass_auto_mask[1] = *b; }
+    else if (key == "nrpass4transfer") v.pass_transfer[2] = renodx_float(value, d.pass_transfer[2], 0.0f, 1.0f);
+    else if (key == "nrpass4color") v.pass_color[2] = renodx_float(value, d.pass_color[2], 0.0f, 1.0f);
+    else if (key == "nrpass4intensity") v.pass_intensity[2] = renodx_float(value, d.pass_intensity[2], 0.0f, 2.0f);
+    else if (key == "nrpass4followpass1") { if (auto b = parse_bool(value)) v.pass_follow[2] = *b; }
+    else if (key == "nrpass4style") v.pass_style[2] = renodx_enum(value, d.pass_style[2], 0, 2);
+    else if (key == "nrpass4localtone") v.pass_local_tone[2] = renodx_float(value, d.pass_local_tone[2], 0.0f, 2.0f);
+    else if (key == "nrpass4structure") v.pass_local_structure[2] = renodx_float(value, d.pass_local_structure[2], 0.0f, 2.0f);
+    else if (key == "nrpass4skin") v.pass_skin_structure[2] = renodx_float(value, d.pass_skin_structure[2], -1.0f, 1.0f);
+    else if (key == "nrpass4automask") { if (auto b = parse_bool(value)) v.pass_auto_mask[2] = *b; }
+    else if (key == "nrcolorstrength") v.color_strength = renodx_float(value, d.color_strength, 0.0f, 1.0f);
+    else if (key == "nrtransferstrength") v.transfer_strength = renodx_float(value, d.transfer_strength, 0.0f, 1.0f);
+    else if (key == "nrchromaclamp") v.chroma_clamp_stops = renodx_float(value, d.chroma_clamp_stops, 0.25f, 2.0f);
+    else if (key == "nrtransfermode") v.transfer_mode = renodx_enum(value, d.transfer_mode, 0, 1);
+    else if (key == "nrstylehighlightguard") v.style_highlight_guard = renodx_float(value, d.style_highlight_guard, 0.0f, 2.0f);
+    else if (key == "nrdetailstability") v.detail_stability = renodx_enum(value, d.detail_stability, 0, 2);
+    else if (key == "nrresolutionscale") v.resolution_scale = renodx_float(value, d.resolution_scale, 0.33f, 1.0f);
+    else if (key == "nrfollowinputres") { if (auto b = parse_bool(value)) v.follow_input_res = *b; }
+    else if (key == "nrlookupsample") v.look_upsample = renodx_enum(value, d.look_upsample, 0, 3);
+    else if (key == "nrlookmode") { if (auto b = parse_bool(value)) v.look_mode = *b; }
+    else if (key == "nrlookstrength") v.look_strength = renodx_float(value, d.look_strength, 0.0f, 2.0f);
+    else if (key == "nrlookbrighten") v.look_brighten = renodx_float(value, d.look_brighten, 0.0f, 2.0f);
+    else if (key == "nrlookdarken") v.look_darken = renodx_float(value, d.look_darken, 0.0f, 2.0f);
+    else if (key == "nrlookcolour") v.look_colour = renodx_float(value, d.look_colour, 0.0f, 2.0f);
+    else if (key == "nrlookhue") v.look_hue = renodx_float(value, d.look_hue, 0.0f, 2.0f);
+    else if (key == "nrlookshadows") v.look_shadows = renodx_float(value, d.look_shadows, 0.0f, 2.0f);
+    else if (key == "nrlookmidtones") v.look_midtones = renodx_float(value, d.look_midtones, 0.0f, 2.0f);
+    else if (key == "nrlookhighlights") v.look_highlights = renodx_float(value, d.look_highlights, 0.0f, 2.0f);
+    else if (key == "nrlookmaxbrighten") v.look_max_brighten = renodx_float(value, d.look_max_brighten, 0.0f, 4.0f);
+    else if (key == "nrlookmaxdarken") v.look_max_darken = renodx_float(value, d.look_max_darken, 0.0f, 4.0f);
+    else if (key == "nrlookmaxcolour") v.look_max_colour = renodx_float(value, d.look_max_colour, 0.0f, 2.0f);
+    else if (key == "nrlooktone") v.look_tone = renodx_float(value, d.look_tone, 0.0f, 2.0f);
+    else if (key == "nrlookdetail") v.look_detail = renodx_float(value, d.look_detail, 0.0f, 2.0f);
+    else if (key == "nrlookdetailradius") v.look_detail_radius = renodx_float(value, d.look_detail_radius, 0.25f, 4.0f);
+    else if (key == "nrlookhalo") v.look_halo = renodx_float(value, d.look_halo, 0.0f, 1.0f);
+    else if (key == "nrlookhalobrightside") v.look_halo_bright = renodx_float(value, d.look_halo_bright, 0.0f, 1.0f);
+    else if (key == "nrlookstabilize") v.look_stabilize = renodx_enum(value, d.look_stabilize, 0, 2);
+    else if (key == "nrlookstabilizems") v.look_stabilize_ms = renodx_float(value, d.look_stabilize_ms, 10.0f, 250.0f);
+    else if (key == "nrlookstabilizedetail") { if (auto b = parse_bool(value)) v.look_stabilize_detail = *b; }
+    else if (key == "nrsdrblackrestore") v.sdr_black_restore = renodx_enum(value, d.sdr_black_restore, 0, 2);
+    else if (key == "nrdisplaypedestal") v.display_pedestal = renodx_enum(value, d.display_pedestal, 0, 2);
+    else if (key == "nrcodecmode") v.codec_mode = renodx_enum(value, d.codec_mode, 0, 3);
+    else if (key == "nrneuralfloorguard") { if (auto b = parse_bool(value)) v.neural_floor_guard = *b; }
+    else if (key == "nrsourceencoding") v.source_encoding = renodx_enum(value, d.source_encoding, 0, 3);
+    else if (key == "nrlinearunitnits") v.linear_unit_nits = renodx_float(value, d.linear_unit_nits, 0.0f, 10000.0f);
+    else if (key == "nrproxyanchor") v.proxy_anchor_nits = renodx_float(value, d.proxy_anchor_nits, 0.5f, 32.0f);
+    else if (key == "nrpaperwhitescale") v.paper_white_scale = renodx_float(value, d.paper_white_scale, 0.005f, 16.0f);
+    else if (key == "nrdiffusewhitenits") v.diffuse_white_nits = renodx_float(value, d.diffuse_white_nits, 80.0f, 1000.0f);
+    else if (key == "nrpqcalibration") v.pq_calibration = renodx_float(value, d.pq_calibration, 0.005f, 16.0f);
+    else if (key == "nrfeedmode") v.feed_mode = renodx_enum(value, d.feed_mode, 0, 2);
+    else if (key == "nrpresentencoding") v.present_encoding = renodx_enum(value, d.present_encoding, 0, 3);
+    else if (key == "nrpresentwhitenits") v.present_white_nits = renodx_float(value, d.present_white_nits, 0.0f, 10000.0f);
+    else if (key == "nrpresentwhitesource") v.present_white_source = renodx_enum(value, d.present_white_source, 0, 1);
+    else if (key == "nrnormgovernor") v.norm_governor = renodx_enum(value, d.norm_governor, 0, 2);
+    else if (key == "nrnormcutaware") { if (auto b = parse_bool(value)) v.norm_cut_aware = *b; }
+    else if (key == "nrnormattackstops") v.norm_attack_stops = renodx_float(value, d.norm_attack_stops, 0.1f, 64.0f);
+    else if (key == "nrnormreleasestops") v.norm_release_stops = renodx_float(value, d.norm_release_stops, 0.05f, 16.0f);
+    else if (key == "nrnormslewstops") v.norm_slew_stops = renodx_float(value, d.norm_slew_stops, 0.0f, 0.5f);
+    else if (key == "nrpresentguides") v.present_guides = renodx_enum(value, d.present_guides, 0, 2);
+    else if (key == "nrdepthmode") v.depth_mode = renodx_enum(value, d.depth_mode, 0, 2);
+    else if (key == "nrmvecscalex") v.mvec_scale_x = renodx_float(value, d.mvec_scale_x, -2.0f, 2.0f);
+    else if (key == "nrmvecscaley") v.mvec_scale_y = renodx_float(value, d.mvec_scale_y, -2.0f, 2.0f);
+    else if (key == "nrscreenshotkey") r.screenshot_key = value;
+    else if (key == "nrscreenshotsource") r.screenshot_source = renodx_enum(value, r.screenshot_source, 0, 2);
+    else if (key == "nrscreenshotformat") r.screenshot_format = renodx_enum(value, r.screenshot_format, 0, 2);
+    else if (key == "nrscreenshotlayout") r.screenshot_layout = renodx_enum(value, r.screenshot_layout, 0, 1);
+    else if (key == "nrscreenshotjpegquality") r.screenshot_jpeg_quality = renodx_enum(value, r.screenshot_jpeg_quality, 80, 100);
+    else if (key == "nrscreenshotmaxmb") r.screenshot_max_mb = renodx_enum(value, r.screenshot_max_mb, 0, 500);
+    else return false;
+    return true;
+}
+
+void write_renodx(FILE* f, const RenoDXConfig& r) {
+    const auto& v = r.values;
+    std::fprintf(f,
+        "\n[RenoDX]\n"
+        "; RenoDX style: the processing around NR (how the picture is handed to NR and how NR's result is put back) follows RenoDX's DLSS5 add-on\n"
+        "; v8.5.0-rc10, with its own shaders (MIT). The NR network itself is the same.\n"
+        "; With the RenoDX style on, every NR setting is in this section (End in game opens NR Control to change them); the NR settings in the OptiScaler menu\n"
+        "; and in [DlssNr] have no effect, OptiScaler only does upscaling and frame generation; off (Enabled = 0), everything is as before.\n"
+        "; The keys other than Enabled keep RenoDX's names, defaults and ranges; a value out of range is taken as the default.\n"
+        "; Enabled applies after a game restart; the other keys apply when saved, also in game.\n"
+        "\n"
+        "Enabled = %d\n"
+        "; 0 = off, no RenoDX processing (default)\n"
+        "; 1 = on\n"
+        "\n"
+        "NeuralUplift = %d\n"
+        "; 1 = NR on (default); 0 = off, the picture passes through unchanged\n"
+        "\n"
+        "NRToggleKey = %s\n"
+        "; hotkey that switches NR on / off in game (for the current run only, not written back), default F6; empty = none\n"
+        "\n"
+        "NRHookPoint = %u\n"
+        "; OptiScaler route only: where NR runs. 0 = after the upscaler (default); 1 = before the upscaler (after it when the game\n"
+        "; uses Ray Reconstruction); 2 = Present (where the ReShade routes run; taken as 0 on the OptiScaler route)\n"
+        "\n"
+        "; the network's own settings (pass 1)\n"
+        "\n"
+        "NRIntensity = %.2f\n"
+        "; 0 .. 2, default 1. Strength of the enhancement\n"
+        "\n"
+        "NRStyle = %u\n"
+        "; 0 = Standard (default); 1 = Natural; 2 = Cinematic\n"
+        "\n"
+        "NRLocalTone = %.2f\n"
+        "; 0 .. 2, default 1. Local tone\n"
+        "\n"
+        "NRLocalStructure = %.2f\n"
+        "; 0 .. 2, default 1. Local structure\n"
+        "\n"
+        "NRSkinStructure = %.2f\n"
+        "; -1 .. 1, default -1 (unchanged). Structure on skin, only with NRAutoMask = 1\n"
+        "\n"
+        "NRAutoMask = %d\n"
+        "; 1 = automatic mask (Character mask): skin is found and treated on its own; 0 = off (default)\n"
+        "\n"
+        "NRSkinIndependent = %d\n"
+        "; 1 = with the automatic mask on, skin follows only NRSkinStructure, not NRLocalStructure; NRLocalStructure then reaches\n"
+        "; the network as at most 1 (above 1 the network ignores the skin setting) (default); 0 = both values go to the network as they are\n"
+        "\n"
+        "; Passes (stacking): how many times the network runs a frame; each pass hands the previous pass's result to the network again and puts it back with this pass's strength.\n"
+        "; Every pass costs one more network run; the frame rate drops noticeably.\n"
+        "\n"
+        "NRPasses = %u\n"
+        "; 1 .. 4, default 1; 1 .. 30 with NRUnlockPasses = 1\n"
+        "NRUnlockPasses = %d\n"
+        "; 1 = NRPasses may go above 4, up to 30 (as OptiScaler's UnlockPasses; RenoDX itself stops at 4); passes 5 and later take pass 4's settings.\n"
+        "; Every pass runs the network once more, which lowers the frame rate a lot. 0 = off (default)\n"
+        "\n"
+        "NRChainedHistory = %d\n"
+        "; 1 = from pass 2 on every pass keeps its own history, restarted only on scene cuts and the like (default); 0 = from pass 2 on, every frame starts afresh\n"
+        "; (RenoDX's diagnostic mode, may flicker, for comparison only)\n"
+        "\n"
+        "; settings of passes 2, 3 and 4 (passes after 4 use pass 4's):\n"
+        "; Transfer / Color: how strongly this pass is put back, as NRTransferStrength / NRColorStrength, 0 .. 1, default 1;\n"
+        "; Intensity: this pass's strength of the enhancement, 0 .. 2, default 1;\n"
+        "; FollowPass1: 1 = this pass's network settings are pass 1's (default); 0 = this pass's own Style / LocalTone / Structure /\n"
+        "; Skin / AutoMask (meaning as for pass 1 above)\n"
+        "\n"
+        "NRPass2Transfer = %.2f\n"
+        "NRPass2Color = %.2f\n"
+        "NRPass2Intensity = %.2f\n"
+        "NRPass2FollowPass1 = %d\n"
+        "NRPass2Style = %u\n"
+        "NRPass2LocalTone = %.2f\n"
+        "NRPass2Structure = %.2f\n"
+        "NRPass2Skin = %.2f\n"
+        "NRPass2AutoMask = %d\n"
+        "\n"
+        "NRPass3Transfer = %.2f\n"
+        "NRPass3Color = %.2f\n"
+        "NRPass3Intensity = %.2f\n"
+        "NRPass3FollowPass1 = %d\n"
+        "NRPass3Style = %u\n"
+        "NRPass3LocalTone = %.2f\n"
+        "NRPass3Structure = %.2f\n"
+        "NRPass3Skin = %.2f\n"
+        "NRPass3AutoMask = %d\n"
+        "\n"
+        "NRPass4Transfer = %.2f\n"
+        "NRPass4Color = %.2f\n"
+        "NRPass4Intensity = %.2f\n"
+        "NRPass4FollowPass1 = %d\n"
+        "NRPass4Style = %u\n"
+        "NRPass4LocalTone = %.2f\n"
+        "NRPass4Structure = %.2f\n"
+        "NRPass4Skin = %.2f\n"
+        "NRPass4AutoMask = %d\n"
+        "\n"
+        "; how NR's result is put back into the picture\n"
+        "\n"
+        "NRColorStrength = %.2f\n"
+        "; 0 .. 1, default 1. Float HDR pictures: how much of NR's change is used (0 = the original picture); SDR and HDR10 pictures: how much of NR's colour is used\n"
+        "; (0 = only NR's change of brightness)\n"
+        "\n"
+        "NRTransferStrength = %.2f\n"
+        "; 0 .. 1, default 1. Strength of NR's change on HDR10 pictures, and of the HDR shadow restore\n"
+        "\n"
+        "NRChromaClamp = %.2f\n"
+        "; 0.25 .. 2 stops, default 1. How far NR may change a colour on HDR pictures\n"
+        "\n"
+        "NRTransferMode = %u\n"
+        "; HDR pictures: 0 = by the ratio before / after NR only (default); 1 = also compensated by the slope of the display curve, less of the change is lost in bright areas\n"
+        "\n"
+        "NRStyleHighlightGuard = %.2f\n"
+        "; 0 .. 2 stops, default 0 (off). How far NR may darken highlights on HDR pictures\n"
+        "\n"
+        "NRDetailStability = %u\n"
+        "; smooths NR's change over time along the motion vectors, less flickering detail: 0 = auto (on after the upscaler with motion vectors, default); 1 = off; 2 = always on\n"
+        "\n"
+        "NRResolutionScale = %.2f\n"
+        "; the NR network's resolution, 0.33 .. 1 of the picture, default 1. Below 1 the network is faster; the change is enlarged back to the picture by NRLookUpsample below\n"
+        "\n"
+        "NRFollowInputRes = %d\n"
+        "; 1 = the NR network runs at the game's render resolution (the motion vectors' resolution) instead of NRResolutionScale; 0 = off (default)\n"
+        "\n"
+        "NRLookUpsample = %u\n"
+        "; with the network below the picture's resolution, how the change is enlarged back: 0 = auto (edge-aware, default); 1 = edge-aware; 2 = classic (plain enlargement);\n"
+        "; 3 = edge-aware, with SDR pictures reduced by area for the network (a change restarts the network's history)\n"
+        "\n"
+        "NRLookMode = %d\n"
+        "; RenoDX's Adjust NR's look: adjusts how much NR changed, directly on its result; changes apply at once, the network does not restart.\n"
+        "; 1 = on, the NRLook* keys below apply; 0 = off, NR's result is used as it is (default). Every NRLook* default leaves the result as it is\n"
+        "\n"
+        "NRLookStrength = %.2f\n"
+        "; 0 .. 2, default 1. NR's whole change (in stops): 0 = removed, 1 = kept, 2 = doubled\n"
+        "\n"
+        "NRLookBrighten = %.2f\n"
+        "; 0 .. 2, default 1. How much of NR's brightening is kept: 0 = none, 2 = doubled\n"
+        "\n"
+        "NRLookDarken = %.2f\n"
+        "; 0 .. 2, default 1. How much of NR's darkening is kept (including the dark halos it leaves around bright objects)\n"
+        "\n"
+        "NRLookColour = %.2f\n"
+        "; 0 .. 2, default 1. How far NR moves colours towards or away from grey: 0 = keep the game's saturation, 2 = doubled\n"
+        "\n"
+        "NRLookHue = %.2f\n"
+        "; 0 .. 2, default 1. How far NR turns hues (colour casts): 0 = keep the game's hues\n"
+        "\n"
+        "NRLookShadows = %.2f\n"
+        "; 0 .. 2, default 1. Multiplier of the change in the game picture's dark areas\n"
+        "\n"
+        "NRLookMidtones = %.2f\n"
+        "; 0 .. 2, default 1. Multiplier of the change in midtones\n"
+        "\n"
+        "NRLookHighlights = %.2f\n"
+        "; 0 .. 2, default 1. Multiplier of the change in bright areas\n"
+        "\n"
+        "NRLookMaxBrighten = %.2f\n"
+        "; 0 .. 4 stops, default 0 (no limit). How far NR may brighten a pixel (soft limit)\n"
+        "\n"
+        "NRLookMaxDarken = %.2f\n"
+        "; 0 .. 4 stops, default 0 (no limit). How far NR may darken a pixel (soft limit)\n"
+        "\n"
+        "NRLookMaxColour = %.2f\n"
+        "; 0 .. 2 stops, default 0 (no limit). How far NR may change a colour (soft limit)\n"
+        "\n"
+        "NRLookTone = %.2f\n"
+        "; 0 .. 2, default 1. Multiplier of NR's broad lighting changes (fine ones: NRLookDetail)\n"
+        "\n"
+        "NRLookDetail = %.2f\n"
+        "; 0 .. 2, default 1. Multiplier of NR's fine detail changes\n"
+        "\n"
+        "NRLookDetailRadius = %.2f\n"
+        "; 0.25 .. 4, default 1. Where broad turns into fine, in percent of the network picture's height\n"
+        "\n"
+        "NRLookHalo = %.2f\n"
+        "; 0 .. 1, default 0. Weakens the dark halos NR leaves beside bright objects; even darkening of whole areas and shadows beside dark objects stay.\n"
+        "; The larger NRLookDetailRadius, the wider the halos it handles\n"
+        "\n"
+        "NRLookHaloBrightSide = %.2f\n"
+        "; 0 .. 1, default 0. Weakens the soft dark edge NR leaves on the brighter side of dark objects (deeper with every pass)\n"
+        "\n"
+        "NRLookStabilize = %u\n"
+        "; smooths NR's broad changes over time: 0 = off (default); 1 = static (for still pictures); 2 = along the motion vectors.\n"
+        "; When on, it replaces NRDetailStability; lighting changes lag slightly\n"
+        "\n"
+        "NRLookStabilizeMs = %.0f\n"
+        "; 10 .. 250 ms, default 60. How long the smoothing remembers: longer is steadier and follows lighting changes more slowly\n"
+        "\n"
+        "NRLookStabilizeDetail = %d\n"
+        "; 1 = fine detail is smoothed too; 0 = broad changes only (default)\n"
+        "\n"
+        "NRSdrBlackRestore = %u\n"
+        "; SDR pictures, taking back NR's lift in dark areas: 0 = near-black areas only (default); 1 = all areas; 2 = as 0, with a smooth transition at the threshold\n"
+        "\n"
+        "NRDisplayPedestal = %u\n"
+        "; HDR pictures, shadow restore: 0 = auto (none on float HDR, default); 1 = always; 2 = as 0, with a smooth transition at the threshold\n"
+        "\n"
+        "NRCodecMode = %u\n"
+        "; HDR encoding: 0 = classic; 1 = anchored; 2 = auto (default); 3 = display\n"
+        "\n"
+        "NRNeuralFloorGuard = %d\n"
+        "; 1 = protects colours where NR's result is near black (default); 0 = off\n"
+        "\n"
+        "; the picture's encoding and brightness\n"
+        "\n"
+        "NRSourceEncoding = %u\n"
+        "; what the picture's values mean: 0 = from the format (default); 1 = SDR; 2 = linear light; 3 = PQ\n"
+        "\n"
+        "NRLinearUnitNits = %.1f\n"
+        "; 0 .. 10000, default 0. Above 0, float pictures are taken in absolute units: 1.0 = this many nits\n"
+        "\n"
+        "NRProxyAnchor = %.2f\n"
+        "; 0.5 .. 32 nits, default 4. Encoding anchor of absolute-unit HDR\n"
+        "\n"
+        "NRPaperWhiteScale = %.4f\n"
+        "; 0.005 .. 16, default 2.5375 (203/80)\n"
+        "\n"
+        "NRDiffuseWhiteNits = %.1f\n"
+        "; 80 .. 1000, default 203. Diffuse white of PQ pictures\n"
+        "\n"
+        "NRPQCalibration = %.3f\n"
+        "; 0.005 .. 16, default 1\n"
+        "\n"
+        "NRFeedMode = %u\n"
+        "; what float HDR pictures are divided by before NR: 0 = auto (the game's exposure when it hands over a readable exposure texture without AutoExposure,\n"
+        "; range-checked, otherwise computed from the picture, default); 1 = always computed from the picture; 2 = always the game's exposure (1 without a texture)\n"
+        "; The ReShade routes have no game exposure and always compute it from the picture\n"
+        "\n"
+        "NRPresentEncoding = %u\n"
+        "; ReShade routes only: the picture's encoding. 0 = from the swap chain's colour space (default); 1 = SDR; 2 = HDR10; 3 = scRGB\n"
+        "\n"
+        "NRPresentWhiteNits = %.1f\n"
+        "; HDR pictures on the ReShade routes only: diffuse white in nits. 0 = auto (default; a RenoDX mod's Game Brightness,\n"
+        "; Windows' SDR content brightness, NRDiffuseWhiteNits, in this order)\n"
+        "\n"
+        "NRPresentWhiteSource = %u\n"
+        "; ReShade routes only: 0 = auto (default); 1 = do not take a RenoDX mod's Game Brightness\n"
+        "\n"
+        "NRNormGovernor = %u\n"
+        "; how the automatic divisor of relative-unit HDR follows the picture: 0 = taken every frame as it is; 1 = rate-limited every frame; 2 = steady (default)\n"
+        "\n"
+        "NRNormCutAware = %d\n"
+        "; 1 = the automatic divisor restarts at once on the game's scene cuts (Reset) (default); 0 = off\n"
+        "\n"
+        "NRNormAttackStops = %.2f\n"
+        "; 0.1 .. 64, default 4. In steady mode, how many stops a second the divisor may grow (the picture NR sees gets darker)\n"
+        "\n"
+        "NRNormReleaseStops = %.2f\n"
+        "; 0.05 .. 16, default 0.5. In steady mode, how many stops a second the divisor may shrink\n"
+        "\n"
+        "NRNormSlewStops = %.3f\n"
+        "; 0 .. 0.5, default 0.02. In rate-limited mode, how many stops a frame at most\n"
+        "\n"
+        "; depth and motion vectors\n"
+        "\n"
+        "NRPresentGuides = %u\n"
+        "; ReShade routes only: 0 = motion vectors (DLSS5_Feed) when there are some, neutral ones (no motion, no depth) otherwise, NR runs either way (default);\n"
+        "; 1 = no NR without motion vectors; 2 = always neutral ones (games whose motion vectors are not used)\n"
+        "\n"
+        "NRDepthMode = %u\n"
+        "; depth direction: 0 = by the game's flag (default); 1 = taken as normal depth; 2 = taken as reversed depth\n"
+        "\n"
+        "NRMVecScaleX = %.3f\n"
+        "; -2 .. 2, default 1. Multiplier of the game's motion vectors in X (for games that hand over wrong ones)\n"
+        "\n"
+        "NRMVecScaleY = %.3f\n"
+        "; -2 .. 2, default 1. Multiplier of the game's motion vectors in Y\n"
+        "\n"
+        "; screenshots: the same frame without and with NR (RenoDX's NR screenshot), saved to the NR Screenshots folder in the game folder\n"
+        "\n"
+        "NRScreenshotKey = %s\n"
+        "; screenshot hotkey, default F5; empty = none (NR Control has a screenshot button too)\n"
+        "\n"
+        "NRScreenshotSource = %u\n"
+        "; what is captured: 0 = auto (default, as 1); 1 = the final picture (on the ReShade routes the picture sent to the display; on the OptiScaler route\n"
+        "; NR moves to OptiScaler's finished picture for one frame); 2 = the model's input and output (for diagnosis, without the game's tone mapping and UI)\n"
+        "\n"
+        "NRScreenshotFormat = %u\n"
+        "; 0 = PNG (default, lossless; HDR as 16-bit PQ, kept HDR); 1 = JPEG; 2 = both\n"
+        "\n"
+        "NRScreenshotLayout = %u\n"
+        "; 0 = two pictures (default); 1 = also a side-by-side picture (left NR off, right NR on)\n"
+        "\n"
+        "NRScreenshotJpegQuality = %u\n"
+        "; 80 .. 100, default 95. JPEG quality\n"
+        "\n"
+        "NRScreenshotMaxMB = %u\n"
+        "; 0 .. 500, default 10. Above this many MB a JPEG's quality is lowered (to 85 at the least, the picture is not scaled down); 0 = no limit\n",
+        r.enabled ? 1 : 0, v.nr_enabled ? 1 : 0, r.toggle_key.c_str(), v.hook_point, v.intensity, v.style,
+        v.local_tone, v.local_structure, v.skin_structure, v.auto_mask ? 1 : 0, v.skin_independent ? 1 : 0, v.passes,
+        v.unlock_passes ? 1 : 0, v.chained_history ? 1 : 0, v.pass_transfer[0], v.pass_color[0], v.pass_intensity[0],
+        v.pass_follow[0] ? 1 : 0, v.pass_style[0], v.pass_local_tone[0], v.pass_local_structure[0],
+        v.pass_skin_structure[0], v.pass_auto_mask[0] ? 1 : 0, v.pass_transfer[1], v.pass_color[1],
+        v.pass_intensity[1], v.pass_follow[1] ? 1 : 0, v.pass_style[1], v.pass_local_tone[1],
+        v.pass_local_structure[1], v.pass_skin_structure[1], v.pass_auto_mask[1] ? 1 : 0, v.pass_transfer[2],
+        v.pass_color[2], v.pass_intensity[2], v.pass_follow[2] ? 1 : 0, v.pass_style[2], v.pass_local_tone[2],
+        v.pass_local_structure[2], v.pass_skin_structure[2], v.pass_auto_mask[2] ? 1 : 0, v.color_strength,
+        v.transfer_strength, v.chroma_clamp_stops, v.transfer_mode, v.style_highlight_guard, v.detail_stability,
+        v.resolution_scale, v.follow_input_res ? 1 : 0, v.look_upsample, v.look_mode ? 1 : 0, v.look_strength,
+        v.look_brighten, v.look_darken, v.look_colour, v.look_hue, v.look_shadows, v.look_midtones,
+        v.look_highlights, v.look_max_brighten, v.look_max_darken, v.look_max_colour, v.look_tone, v.look_detail,
+        v.look_detail_radius, v.look_halo, v.look_halo_bright, v.look_stabilize, v.look_stabilize_ms,
+        v.look_stabilize_detail ? 1 : 0, v.sdr_black_restore, v.display_pedestal, v.codec_mode,
+        v.neural_floor_guard ? 1 : 0, v.source_encoding, v.linear_unit_nits, v.proxy_anchor_nits,
+        v.paper_white_scale, v.diffuse_white_nits, v.pq_calibration, v.feed_mode, v.present_encoding,
+        v.present_white_nits, v.present_white_source, v.norm_governor, v.norm_cut_aware ? 1 : 0, v.norm_attack_stops,
+        v.norm_release_stops, v.norm_slew_stops, v.present_guides, v.depth_mode, v.mvec_scale_x, v.mvec_scale_y,
+        r.screenshot_key.c_str(), r.screenshot_source, r.screenshot_format, r.screenshot_layout,
+        r.screenshot_jpeg_quality, r.screenshot_max_mb);
+}
+
+bool KeyPress::frame(const std::string& key_text) {
+    if (key_text != key_text_) {
+        key_text_ = key_text;
+        vk_ = 0;
+        if (!key_text_.empty() && !parse_hotkey(key_text_, vk_, mods_)) {
+            log("[nr] RenoDX-style option: NRScreenshotKey \"%s\" not understood; no hotkey", key_text_.c_str());
+            vk_ = 0;
+        }
+    }
+    if (!vk_) return false;
+    const bool down = key_down(vk_) && ((mods_ & MOD_CONTROL) != 0) == key_down(VK_CONTROL) &&
+                      ((mods_ & MOD_SHIFT) != 0) == key_down(VK_SHIFT) && ((mods_ & MOD_ALT) != 0) == key_down(VK_MENU);
+    const bool pressed = down && !down_ && focused();
+    down_ = down;
+    return pressed;
+}
+
+bool NrToggle::frame(const RenoDXConfig& file) {
+    if (file.toggle_key != key_text_) {
+        key_text_ = file.toggle_key;
+        vk_ = 0;
+        if (!key_text_.empty() && !parse_hotkey(key_text_, vk_, mods_)) {
+            log("[nr] RenoDX-style option: NRToggleKey \"%s\" not understood; no hotkey", key_text_.c_str());
+            vk_ = 0;
+        }
+    }
+    if (file.values.nr_enabled != file_on_) { file_on_ = file.values.nr_enabled; have_override_ = false; }
+    if (vk_) {
+        const bool down = key_down(vk_) && ((mods_ & MOD_CONTROL) != 0) == key_down(VK_CONTROL) &&
+                          ((mods_ & MOD_SHIFT) != 0) == key_down(VK_SHIFT) &&
+                          ((mods_ & MOD_ALT) != 0) == key_down(VK_MENU);
+        if (down && !down_ && focused()) {
+            override_ = !(have_override_ ? override_ : file_on_);
+            have_override_ = true;
+        }
+        down_ = down;
+    }
+    const bool on = have_override_ ? override_ : file_on_;
+    if (logged_ && on != last_) log("[nr] RenoDX-style option: NR %s", on ? "on" : "off");
+    logged_ = true;
+    last_ = on;
+    return on;
+}
+
+bool read_renodx(const std::string& path, RenoDXConfig& out) {
+    FILE* file = std::fopen(path.c_str(), "r");
+    if (!file) return false;
+    RenoDXConfig r{};
+    std::string name;
+    char line[512];
+    while (std::fgets(line, sizeof line, file)) {
+        std::string text = line;
+        const auto comment = text.find_first_of(";#");
+        if (comment != std::string::npos) text = text.substr(0, comment);
+        text = trim(text);
+        if (text.empty()) continue;
+        if (text.front() == '[') {
+            const auto close = text.find(']');
+            name = lower(trim(text.substr(1, close == std::string::npos ? std::string::npos : close - 1)));
+            continue;
+        }
+        const auto equals = text.find('=');
+        if (equals == std::string::npos || name != "renodx") continue;
+        parse_renodx_key(r, lower(trim(text.substr(0, equals))), trim(text.substr(equals + 1)));
+    }
+    std::fclose(file);
+    out = r;
+    return true;
+}
+
+bool RenoDXFile::poll(const std::string& path, RenoDXConfig& out) {
+    const uint64_t now = GetTickCount64();
+    if (stamp_ && now - checked_ms_ < 1000) return false;
+    checked_ms_ = now;
+    const uint64_t stamp = stamp_of(path);
+    if (!stamp || stamp == stamp_) return false;
+    RenoDXConfig next{};
+    if (!read_renodx(path, next)) return false;
+    stamp_ = stamp;
+    out = next;
     return true;
 }
 
@@ -404,6 +1026,7 @@ bool PreprocessFile::poll(const std::string& path, PreprocessConfig& out) {
             write_int4mixed(f, true, "Ctrl+F11", false, true);
 #endif
             write_preprocess(f, PreprocessConfig{});
+            write_renodx(f, RenoDXConfig{});
             write_log(f, true, true);
             std::fclose(f);
             stamp_ = stamp_of(path);
@@ -627,13 +1250,17 @@ void Config::save(const std::string& path) {
         "; How strongly the previous frame's result is blended into this one, 0..1\n"
         "History=%.3f\n"
         "; White point of linear-light input\n"
-        "WhitePoint=%.3f\n",
-        history, white_point);
+        "WhitePoint=%.3f\n"
+        "; Frames without motion vectors (DLSS5_MV not bound): the network's noise seed changes every frame, as in\n"
+        "; NVIDIA's original. With no previous frame to average the noise, a still picture shimmers slightly. false (default): a fixed seed\n"
+        "NoiseEveryFrame=%s\n",
+        history, white_point, flag(k.noise_every_frame));
     std::fputs("\n", f);
 #if NR_INT4
     write_int4mixed(f, int4, int4_hotkey, int4_keep_both, int4_sound);
 #endif
     write_preprocess(f, preprocess);
+    write_renodx(f, renodx);
     write_log(f, log_enabled, log_clear);
     std::fclose(f);
     stamp_ = stamp_of(path);

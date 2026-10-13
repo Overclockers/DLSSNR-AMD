@@ -4,9 +4,12 @@
 #endif
 #include "nr_pe_log.hpp"
 #include "nr_log.hpp"
+#include "nr_screenshot.hpp"
 #include <windows.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <map>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -91,11 +94,16 @@ struct Session::Impl {
         // per pass, so a network built for four cannot serve a request for six.
         uint32_t passes{4};
         bool prep{};   // RuntimeConfig::preprocess
+        bool native{}; // RuntimeConfig::native_compose
 #if NR_INT4
         int int4{};    // RuntimeConfig::int4_mixed asked for (0 default, 1 int4 mixed)
 #endif
         uint64_t used{};   // LRU stamp
+        std::chrono::steady_clock::time_point last{};   // when it was last selected
     };
+    // A cached network taken up again after serving nothing for this long starts its features fresh (as after a
+    // Reset), so no frame is blended with a history that old; RenoDX's own look history uses the same bound.
+    static constexpr std::chrono::milliseconds kStaleHistory{250};
     std::vector<Built> cache;
     uint64_t use_stamp{};
     // Evicted networks wait here before they are destroyed. run_after and run_present record the network into
@@ -109,6 +117,228 @@ struct Session::Impl {
     static constexpr uint64_t kRetireCalls = 16;
     static constexpr std::chrono::seconds kRetireTime{1};
     void free_retired();
+    // The RenoDX-style option: one stage per feature, made at the frame's extent, format and HDR judgement.
+    // A replaced or released one is kept for kRetireCalls more evaluations and kRetireTime, as networks are.
+    struct RenoDXEntry {
+        std::unique_ptr<renodx::Stage> stage;
+        uint32_t w{}, h{}, nw{}, nh{}, present{};
+        VkFormat format{VK_FORMAT_UNDEFINED};
+        bool hdr{};
+        // RenoDX's CommitNrResolution: the network's extent in use, and one the game's guides moved to waiting
+        // out kContractDebounceFrames (a settings change is taken at once).
+        uint32_t applied_w{}, applied_h{}, pending_w{}, pending_h{}, pending_frames{};
+        float scale{-1.0f};
+        bool follow{};
+        uint32_t stack{1};   // the model passes its stack last ran: pass k > 0 keeps a history of its own
+    };
+    std::map<uint64_t, RenoDXEntry> renodx;
+    // The history pass k of a feature's stack runs on (pass 0: the feature's own).
+    static uint64_t stack_feature(uint64_t feature, uint32_t k) {
+        return k == 0 ? feature : (uint64_t(1) << 62) | (feature << 8) | k;
+    }
+    // Pass 1's name on a route whose frames carry none (feature 0), when it stacks; no game feature is numbered so.
+    static constexpr uint64_t kUnnamedStack = 0xFFFFFFu;
+    void release_everywhere(uint64_t feature) {
+        for (auto& e : cache) e.runtime->release_feature(feature);
+    }
+    // RenoDX's neutral guides (NRPresentGuides): zero motion vectors at the frame's extent, for a Present-path frame
+    // without the game's (Optional) or always (Never). Made and cleared on first use, kept.
+    VkImage neutral_mv{};
+    VkDeviceMemory neutral_mv_memory{};
+    uint32_t neutral_w{}, neutral_h{};
+    bool neutral_cleared{};
+    bool neutral_motion(VkCommandBuffer cmd, uint32_t w, uint32_t h, ColourFrame* out);
+    // Whether a RenoDX frame of this route runs without the game's motion vectors (the Present path's Optional and
+    // Never; Required, and every other route, need them).
+    static bool renodx_needs_motion(const Session::RenoDXFrame& rf) {
+        return !rf.present || rf.settings.present_guides == 1u;
+    }
+    // The RenoDX-style option's cost for NR Control and the log: a timestamp pair around the whole stage and one
+    // around each pass's network, in the same frame, a ring of frames read back without waiting, averaged as the
+    // runtime averages its own (the runtime's own timing covers one pass at a time).
+    static constexpr uint32_t kStageSlots = 8, kStageQueries = 2 + 2 * renodx::kMaxUnlockedPasses;
+    VkQueryPool stage_timing{};
+    bool stage_timing_tried{};
+    double stage_timestamp_ns{};
+    uint32_t stage_slot{};
+    uint32_t stage_slot_passes[kStageSlots]{};
+    uint64_t stage_recorded{};
+    float stage_ms_avg{}, stage_net_ms_avg{};
+    bool renodx_timed{};
+    void read_stage_timing() {
+        if (stage_recorded <= kStageSlots) return;
+        const uint32_t n = 2 + 2 * stage_slot_passes[stage_slot];
+        uint64_t stamps[kStageQueries] = {};
+        if (vkGetQueryPoolResults(handles.device, stage_timing, stage_slot * kStageQueries, n, n * sizeof(uint64_t), stamps,
+                                  sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS || stamps[1] <= stamps[0])
+            return;   // still running: next frame
+        uint64_t net = 0;
+        for (uint32_t p = 0; p < stage_slot_passes[stage_slot]; ++p)
+            if (stamps[3 + 2 * p] > stamps[2 + 2 * p]) net += stamps[3 + 2 * p] - stamps[2 + 2 * p];
+        const float ms = float(double(stamps[1] - stamps[0]) * stage_timestamp_ns / 1e6);
+        const float net_ms = float(double(net) * stage_timestamp_ns / 1e6);
+        const bool first = stage_ms_avg <= 0.0f;
+        stage_ms_avg = first ? ms : stage_ms_avg + (ms - stage_ms_avg) * 0.1f;
+        stage_net_ms_avg = first ? net_ms : stage_net_ms_avg + (net_ms - stage_net_ms_avg) * 0.1f;
+    }
+    bool stage_timing_ready() {
+        if (stage_timing_tried) return stage_timing != VK_NULL_HANDLE;
+        stage_timing_tried = true;
+        uint32_t n = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(handles.physical, &n, nullptr);
+        std::vector<VkQueueFamilyProperties> families(n);
+        vkGetPhysicalDeviceQueueFamilyProperties(handles.physical, &n, families.data());
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(handles.physical, &props);
+        if (access.family >= n || !families[access.family].timestampValidBits || props.limits.timestampPeriod <= 0.0f) return false;
+        stage_timestamp_ns = props.limits.timestampPeriod;
+        VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        qi.queryType = VK_QUERY_TYPE_TIMESTAMP; qi.queryCount = kStageSlots * kStageQueries;
+        if (vkCreateQueryPool(handles.device, &qi, nullptr, &stage_timing) != VK_SUCCESS) stage_timing = VK_NULL_HANDLE;
+        return stage_timing != VK_NULL_HANDLE;
+    }
+    // RenoDX's NR screenshot (nr_screenshot.hpp): one capture's two readbacks in one host-visible buffer (the image
+    // before NR at 0, after it at `bytes`), filled by copies recorded in the frame's own command buffer; an event set
+    // after them is the proof the GPU ran them (an event starts unset; a new query pool's queries are undefined until
+    // the command buffer resetting them has run, and RADV reads them as available). Handed to the worker once it has,
+    // freed once the worker has read it; a capture never proven run is kept until the session goes (its command buffer
+    // may still run).
+    struct Shot {
+        VkBuffer buffer{};
+        VkDeviceMemory memory{};
+        void* mapped{};
+        uint64_t bytes{};
+        VkEvent done{};
+        screenshot::Pair pair;
+        uint32_t frames{};
+        bool handed{};
+        std::atomic_bool read{false};
+    };
+    static constexpr uint32_t kShotSettleFrames = 240;   // RenoDX's kExactSettlePresents
+    std::unique_ptr<Shot> shot;                          // recorded, waiting for the GPU
+    std::vector<std::unique_ptr<Shot>> shots_out;        // with the worker, or kept
+    void shot_free(Shot& sh) {
+        if (sh.mapped) vkUnmapMemory(handles.device, sh.memory);
+        if (sh.buffer) vkDestroyBuffer(handles.device, sh.buffer, nullptr);
+        if (sh.memory) vkFreeMemory(handles.device, sh.memory, nullptr);
+        if (sh.done) vkDestroyEvent(handles.device, sh.done, nullptr);
+        sh.mapped = nullptr; sh.buffer = VK_NULL_HANDLE; sh.memory = VK_NULL_HANDLE; sh.done = VK_NULL_HANDLE;
+    }
+    // Readbacks for a w x h pair of `format`, stamped (nr_screenshot.hpp); null when anything fails.
+    std::unique_ptr<Shot> shot_prepare(uint32_t w, uint32_t h, VkFormat format) {
+        auto sh = std::make_unique<Shot>();
+        sh->bytes = uint64_t(w) * h * screenshot::bytes_per_pixel(format);
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bi.size = sh->bytes * 2; bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        VkMemoryRequirements req{};
+        VkPhysicalDeviceMemoryProperties mem{};
+        uint32_t type = ~0u;
+        const VkMemoryPropertyFlags want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkEventCreateInfo ei{VK_STRUCTURE_TYPE_EVENT_CREATE_INFO};
+        if (!sh->bytes || vkCreateBuffer(handles.device, &bi, nullptr, &sh->buffer) != VK_SUCCESS) goto fail;
+        vkGetBufferMemoryRequirements(handles.device, sh->buffer, &req);
+        vkGetPhysicalDeviceMemoryProperties(handles.physical, &mem);
+        for (int pass = 0; pass < 2 && type == ~0u; ++pass)   // host-cached first: the worker reads it all
+            for (uint32_t i = 0; i < mem.memoryTypeCount && type == ~0u; ++i) {
+                const VkMemoryPropertyFlags f = mem.memoryTypes[i].propertyFlags;
+                if ((req.memoryTypeBits & (1u << i)) && (f & want) == want &&
+                    (pass == 1 || (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)))
+                    type = i;
+            }
+        if (type == ~0u) goto fail;
+        {
+            VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            ai.allocationSize = req.size; ai.memoryTypeIndex = type;
+            if (vkAllocateMemory(handles.device, &ai, nullptr, &sh->memory) != VK_SUCCESS ||
+                vkBindBufferMemory(handles.device, sh->buffer, sh->memory, 0) != VK_SUCCESS ||
+                vkMapMemory(handles.device, sh->memory, 0, VK_WHOLE_SIZE, 0, &sh->mapped) != VK_SUCCESS) {
+                sh->mapped = nullptr;
+                goto fail;
+            }
+        }
+        if (vkCreateEvent(handles.device, &ei, nullptr, &sh->done) != VK_SUCCESS) goto fail;
+        screenshot::stamp(sh->mapped, sh->bytes);
+        screenshot::stamp(static_cast<uint8_t*>(sh->mapped) + sh->bytes, sh->bytes);
+        sh->pair.width = w; sh->pair.height = h; sh->pair.format = format;
+        sh->pair.row_pitch = w * screenshot::bytes_per_pixel(format);
+        sh->pair.bytes = sh->bytes;
+        sh->pair.pre = sh->mapped;
+        sh->pair.post = static_cast<uint8_t*>(sh->mapped) + sh->bytes;
+        return sh;
+    fail:
+        shot_free(*sh);
+        return nullptr;
+    }
+    // `image` (in `layout`, last used by `stage` / `access`) into the readback at `offset`, and back to `layout`.
+    static void shot_copy(VkCommandBuffer cmd, Shot& sh, VkImage image, VkImageLayout layout, VkPipelineStageFlags stage,
+                          VkAccessFlags access, VkDeviceSize offset) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.image = image;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.oldLayout = layout; b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        b.srcAccessMask = access; b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, stage, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+        VkBufferImageCopy region{};
+        region.bufferOffset = offset;
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {sh.pair.width, sh.pair.height, 1};
+        vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sh.buffer, 1, &region);
+        b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; b.newLayout = layout;
+        b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT; b.dstAccessMask = access;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, stage | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+                             nullptr, 0, nullptr, 1, &b);
+    }
+    // Both copies recorded: the proof after them, and the capture is no longer armed.
+    void shot_recorded(VkCommandBuffer cmd, std::unique_ptr<Shot> sh) {
+        VkBufferMemoryBarrier bb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        bb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; bb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        bb.srcQueueFamilyIndex = bb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bb.buffer = sh->buffer; bb.size = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &bb, 0, nullptr);
+        vkCmdSetEvent(cmd, sh->done, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        screenshot::recorded();
+        shot = std::move(sh);
+    }
+    // Once a frame: a recorded capture the GPU has run goes to the worker; one the worker has read is freed.
+    void shot_poll() {
+        for (auto it = shots_out.begin(); it != shots_out.end();)
+            if ((*it)->handed && (*it)->read.load(std::memory_order_acquire)) { shot_free(**it); it = shots_out.erase(it); }
+            else ++it;
+        if (!shot) return;
+        if (vkGetEventStatus(handles.device, shot->done) == VK_EVENT_SET) {
+            Shot* sh = shot.get();
+            sh->handed = true;
+            sh->pair.owner = sh;
+            sh->pair.release = [](void* owner) { static_cast<Shot*>(owner)->read.store(true, std::memory_order_release); };
+            screenshot::Pair pair = sh->pair;
+            shots_out.push_back(std::move(shot));
+            screenshot::deliver(std::move(pair));
+        } else if (++shot->frames > kShotSettleFrames) {
+            screenshot::abandon("gpu_unconfirmed", "the command buffer carrying the copies did not run within 240 frames "
+                                "(buffers kept)");
+            shots_out.push_back(std::move(shot));
+        }
+    }
+    struct RenoDXRetired { std::unique_ptr<renodx::Stage> stage; uint64_t call; std::chrono::steady_clock::time_point at; };
+    std::vector<RenoDXRetired> renodx_retired;
+    void retire_stage(std::unique_ptr<renodx::Stage> stage) {
+        if (stage) renodx_retired.push_back({std::move(stage), calls, std::chrono::steady_clock::now()});
+    }
+    bool renodx_runtime(const Controls& controls, uint32_t w, uint32_t h, Controls* c);
+    void renodx_extent(uint64_t feature, uint32_t w, uint32_t h, uint32_t guide_w, uint32_t guide_h,
+                       const renodx::Settings& settings, uint32_t* nw, uint32_t* nh);
+    renodx::Stage* renodx_stage(uint64_t feature, uint32_t w, uint32_t h, uint32_t nw, uint32_t nh, VkFormat format,
+                                const Session::RenoDXFrame& rf);
+    bool record_renodx(VkCommandBuffer cmd, renodx::Stage& stage, const ColourFrame& colour, const ColourFrame& output,
+                       EngineFrame engine, const Controls& c, const Session::RenoDXFrame& rf,
+                       const ColourFrame* exposure = nullptr);
+    void free_retired_stages() {
+        const auto now = std::chrono::steady_clock::now();
+        for (size_t i = renodx_retired.size(); i-- > 0;)
+            if (calls - renodx_retired[i].call > kRetireCalls && now - renodx_retired[i].at > kRetireTime)
+                renodx_retired.erase(renodx_retired.begin() + std::ptrdiff_t(i));
+    }
     // The entry in `cache` the run paths are using. Raw, because the cache owns
     // them; null until the first build lands.
     Runtime* runtime{};
@@ -188,7 +418,7 @@ struct Session::Impl {
     // thread adopts whichever on its next call.
     std::thread build_thread;
     std::mutex build_lock;
-    bool building{}, build_done{}, build_linear{}, build_prep{};
+    bool building{}, build_done{}, build_linear{}, build_prep{}, build_native{};
     std::chrono::steady_clock::time_point build_started{};
 #if NR_INT4
     // [Int4Mixed]: the network the switch asks for, the one being built, and the one running (Built::int4).
@@ -217,15 +447,22 @@ struct Session::Impl {
     // Model Resolution. A change rebuilds the network, like a resolution change.
     float model_scale{1.0f}, build_scale{1.0f}, built_scale{1.0f};
     bool native_compose{};   // Session::set_native_compose
+    // The RenoDX-style option on a route without native compose (the ReShade add-on): its frames ask for the
+    // DLL's own composition too, so the network RenoDX's processing wraps is the same on every route.
+    bool renodx_native{};
+    bool running_native{};   // Built::native of `runtime`
+    uint32_t running_passes{};   // Built::passes of `runtime`
+    bool running_prep{};         // Built::prep of `runtime`
     // Controls::preprocess was asked for once: from then on every runtime is
     // built able to run it, so the hotkey switches at once after the first
     // time. Never cleared; until then nothing about the runtime changes.
     bool prep_want{};
     // Every runtime is built able to run this many passes; Controls::passes
     // picks the count per frame.
-    // What a network is built for unless the host asks for more. Four is what
-    // shipped; the ceiling is 16 and raising it costs one model-sized history
-    // image per pass, which is why it is not simply set there.
+    // What a network is built for unless the host asks for something else
+    // (set_max_passes: one pass is built for one, more for at least four). The
+    // ceiling is 16 and raising it costs one model-sized history image per
+    // pass, which is why it is not simply set there.
     static constexpr uint32_t kMaxPasses = 4;
     static constexpr uint32_t kPassCeiling = 16;
     uint32_t max_passes_want{kMaxPasses};
@@ -235,6 +472,11 @@ struct Session::Impl {
     // Make `entry` the one the run paths use. Returns false when there is no
     // such entry.
     bool select_runtime(uint32_t w, uint32_t h, VkFormat format, bool want_linear);
+    // The running network serves while another builds (an [Int4Mixed] or pass-count switch): it is in use.
+    void touch_running() {
+        for (auto& e : cache)
+            if (e.runtime.get() == runtime) { e.last = std::chrono::steady_clock::now(); e.used = ++use_stamp; }
+    }
     bool have_runtime(uint32_t w, uint32_t h) const {
         for (const auto& e : cache) if (e.width == w && e.height == h) return true;
         return false;
@@ -494,21 +736,27 @@ bool Session::Impl::fits_in_memory(uint32_t w, uint32_t h, bool quiet) {
 bool Session::Impl::select_runtime(uint32_t w, uint32_t h, VkFormat format, bool want_linear) {
     for (auto& e : cache) {
         if (e.width != w || e.height != h || e.format != format || e.linear != want_linear ||
-            e.scale != model_scale || e.passes != max_passes_want || e.prep != prep_want)
+            e.scale != model_scale || e.passes != max_passes_want || e.prep != prep_want ||
+            e.native != (native_compose || renodx_native))
             continue;
 #if NR_INT4
         if (e.int4 != int4_want) continue;   // [Int4Mixed]: the network the switch asks for
 #endif
         e.used = ++use_stamp;
+        const auto now = std::chrono::steady_clock::now();
         if (runtime != e.runtime.get()) {
+            const bool stale = e.last != std::chrono::steady_clock::time_point{} && now - e.last > kStaleHistory;
+            if (stale) e.runtime->forget_history();
             log("[nr] runtime cache hit: %ux%u (model %ux%u, scale %.2f%s), %u built, "
-                "%u live features", e.width, e.height, e.runtime->model_width(),
+                "%u live features%s", e.width, e.height, e.runtime->model_width(),
                 e.runtime->model_height(), e.scale, e.linear ? ", linear" : "",
-                unsigned(cache.size()), e.runtime->live_features());
+                unsigned(cache.size()), e.runtime->live_features(), stale ? ", history started afresh" : "");
         }
+        e.last = now;
         runtime = e.runtime.get();
         width = e.width; height = e.height; this->format = e.format;
-        linear = e.linear; built_scale = e.scale;
+        linear = e.linear; built_scale = e.scale; running_native = e.native;
+        running_passes = e.passes; running_prep = e.prep;
 #if NR_INT4
         running_int4 = e.int4;
 #endif
@@ -589,14 +837,24 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
                 Built entry;
                 entry.width = build_w; entry.height = build_h; entry.format = build_format;
                 entry.linear = build_linear; entry.scale = build_scale;
-                entry.passes = build_passes; entry.prep = build_prep;
+                entry.passes = build_passes; entry.prep = build_prep; entry.native = build_native;
 #if NR_INT4
                 // what was built, not what was asked: an int4 build without what it needs is the default network
                 entry.int4 = built->int4_mixed() ? 1 : 0;
                 if (build_int4 && !entry.int4) { int4_switch.unavailable(); int4_want = 0; }   // not asked again this run
 #endif
                 entry.used = ++use_stamp;
+                entry.last = std::chrono::steady_clock::now();
                 entry.runtime = std::move(built);
+                // The pass count went back while this one built, and the running network is the one wanted again:
+                // this one is not wanted; the running one keeps serving.
+                const bool unwanted = entry.passes != max_passes_want && runtime && running_passes == max_passes_want &&
+                                      width == entry.width && height == entry.height && this->format == entry.format;
+                if (unwanted) {
+                    log("[nr] the network built for %u passes is not wanted any more (the pass count changed back)",
+                        entry.passes);
+                    retired.push_back({std::move(entry.runtime), calls, std::chrono::steady_clock::now()});
+                } else {
                 log("[nr] network built at %ux%u (model %ux%u, scale %.2f) on queue family %u in "
                     "%.1f s%s; %u networks resident",
                     entry.width, entry.height, entry.runtime->model_width(),
@@ -617,14 +875,24 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
                     for (size_t i = cache.size(); i-- > 0;)
                         if (cache[i].int4 != entry.int4) drop(i, entry.int4 ? "(default; int4 mixed is in)" : "(int4 mixed; default is in)");
 #endif
+                // A change of pass count: the network built for the other count served until now and keeps no
+                // memory once this one is in.
+                for (size_t i = cache.size(); i-- > 0;)
+                    if (cache[i].passes != entry.passes && cache[i].width == entry.width &&
+                        cache[i].height == entry.height && cache[i].format == entry.format &&
+                        cache[i].linear == entry.linear && cache[i].scale == entry.scale &&
+                        cache[i].prep == entry.prep && cache[i].native == entry.native)
+                        drop(i, "(built for another pass count)");
                 cache.push_back(std::move(entry));
                 auto& adopted = cache.back();
                 runtime = adopted.runtime.get();
                 width = adopted.width; height = adopted.height; this->format = adopted.format;
-                linear = adopted.linear; built_scale = adopted.scale;
+                linear = adopted.linear; built_scale = adopted.scale; running_native = adopted.native;
+                running_passes = adopted.passes; running_prep = adopted.prep;
 #if NR_INT4
                 running_int4 = adopted.int4;
 #endif
+                }
                 oom_failures = 0;
                 retry_at = {};
             } else {
@@ -652,12 +920,25 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
     // [Int4Mixed] switch: the running network keeps serving its frames while the other one builds, so the
     // comparison has no gap but the build itself (the first int4 build also compiles its pipelines).
     const bool int4_only = runtime && running_int4 >= 0 && running_int4 != int4_want && width == w && height == h &&
-                           this->format == format && linear == want_linear && built_scale == model_scale;
+                           this->format == format && linear == want_linear && built_scale == model_scale &&
+                           running_native == (native_compose || renodx_native);
 #endif
+    // A change of pass count (set_max_passes): the running network serves, at most at the passes it was built for,
+    // while the one for the new count builds.
+    static constexpr const char* kPassesServing =
+        "building the network for the new pass count in the background; the running one serves until it is ready";
+    const bool passes_only = runtime && running_passes != max_passes_want && width == w && height == h &&
+                             this->format == format && linear == want_linear && built_scale == model_scale &&
+                             running_native == (native_compose || renodx_native) && running_prep == prep_want
+#if NR_INT4
+                             && running_int4 == int4_want
+#endif
+        ;
     if (building) {
 #if NR_INT4
-        if (int4_only) return true;
+        if (int4_only) { touch_running(); return true; }
 #endif
+        if (passes_only) { touch_running(); status = kPassesServing; return true; }
         status = "building the network in the background; frames pass through until it is ready";
         return false;
     }
@@ -684,8 +965,9 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
     // through.
     if (!retired.empty() && !fits_in_memory(w, h, true)) {
 #if NR_INT4
-        if (int4_only) return true;
+        if (int4_only) { touch_running(); return true; }
 #endif
+        if (passes_only) { touch_running(); status = kPassesServing; return true; }
         status = "freeing the previous network before building another";
         return false;
     }
@@ -694,8 +976,9 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
     config.root = root; config.width = w; config.height = h; config.colour_format = format;
     config.linear_input = want_linear; config.white_point = white_point;
     config.model_scale = model_scale;
-    config.max_passes = native_compose ? 1u : max_passes_want;
-    config.native_compose = native_compose;
+    const bool native = native_compose || renodx_native;
+    config.max_passes = native ? 1u : max_passes_want;
+    config.native_compose = native;
     config.preprocess = prep_want;
 #if NR_INT4
     config.int4_mixed = int4_want;
@@ -704,8 +987,8 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
     // linear-HDR encode, which a float proxy on the OptiScaler route came
     // through (OptiScaler encodes a float colour flagged IsHDR or AutoExposure
     // and hands an SDR one over as it is, and only the format reaches us).
-    config.preprocess_unknee = want_linear || (native_compose && is_linear_format(format));
-    if (native_compose) config.model_scale = 1.0f;   // the DLL has no resample; OptiScaler scales outside
+    config.preprocess_unknee = want_linear || (native && is_linear_format(format));
+    if (native) config.model_scale = 1.0f;   // the DLL has no resample; OptiScaler scales outside
     TemporalConfig temporal; temporal.enable = true;
     temporal.history_strength = history_strength;
     HostDevice host{};
@@ -724,7 +1007,7 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
     building = true; build_w = w; build_h = h; build_format = format; build_linear = want_linear;
     build_started = std::chrono::steady_clock::now();
     nr::g_build_stage = 1; nr::g_build_pipes_done = 0; nr::g_build_pipes_total = 0;
-    build_scale = model_scale; build_passes = max_passes_want; build_prep = prep_want;
+    build_scale = model_scale; build_passes = max_passes_want; build_prep = prep_want; build_native = native;
 #if NR_INT4
     build_int4 = int4_want;
 #endif
@@ -784,8 +1067,13 @@ bool Session::Impl::ensure_runtime_(const Controls& controls, uint32_t w, uint32
         build_oom = oom;
     });
 #if NR_INT4
-    if (int4_only && runtime != nullptr) return true;   // an [Int4Mixed] switch: the running one serves until the new one is in
+    if (int4_only && runtime != nullptr) { touch_running(); return true; }   // an [Int4Mixed] switch: the running one serves until the new one is in
 #endif
+    if (passes_only && runtime != nullptr) {   // a change of pass count, the same
+        touch_running();
+        status = kPassesServing;
+        return true;
+    }
     return false;
 }
 
@@ -1036,9 +1324,14 @@ void Session::set_white_point(float v) {
 void Session::set_native_compose(bool v) { impl_->native_compose = v; }
 
 void Session::set_max_passes(uint32_t v) {
-    // Never below what shipped, so the common 1..4 never pays for a rebuild;
-    // above it the next frame rebuilds, like a resolution change.
-    const uint32_t want = v < Session::Impl::kMaxPasses ? Session::Impl::kMaxPasses
+    // One pass: a network built for exactly one, whose single-pass paths (history
+    // written in turn into two images, motion sampled in place, the input not
+    // kept for later passes) do less work for the same answer. More than one:
+    // never below four, so 2..4 share a network; above it the next frame
+    // rebuilds, like a resolution change. A change of pass count keeps the
+    // running network serving until the new one is built (ensure_runtime_).
+    const uint32_t want = v <= 1 ? 1u
+                        : v < Session::Impl::kMaxPasses ? Session::Impl::kMaxPasses
                         : (v > Session::Impl::kPassCeiling ? Session::Impl::kPassCeiling : v);
     impl_->max_passes_want = want;
 }
@@ -1065,6 +1358,15 @@ Session::~Session() {
     impl_->release_output();
     impl_->release_invalidator();
     impl_->release_vk_output();
+    if (impl_->stage_timing) vkDestroyQueryPool(impl_->handles.device, impl_->stage_timing, nullptr);
+    // Screenshot readbacks: the worker may still be reading one it was handed (it finishes on its own).
+    if (impl_->shot) impl_->shot_free(*impl_->shot);
+    for (auto& sh : impl_->shots_out) {
+        for (int i = 0; i < 500 && sh->handed && !sh->read.load(std::memory_order_acquire); ++i) Sleep(10);
+        if (!sh->handed || sh->read.load(std::memory_order_acquire)) impl_->shot_free(*sh);
+    }
+    if (impl_->neutral_mv) vkDestroyImage(impl_->handles.device, impl_->neutral_mv, nullptr);
+    if (impl_->neutral_mv_memory) vkFreeMemory(impl_->handles.device, impl_->neutral_mv_memory, nullptr);
     if (impl_->pool) vkDestroyCommandPool(impl_->handles.device, impl_->pool, nullptr);
     if (impl_->owned_queue) impl_->owned_queue->Release();
     if (impl_->dxvk) impl_->dxvk->Release();
@@ -1089,11 +1391,18 @@ bool Session::failed() const { return impl_->failed; }
 // The runtime that is actually running frames, not the one being built: during a
 // rebuild the old one is still the one paying for the picture on screen.
 float Session::gpu_ms() const {
+    if (impl_->renodx_timed) return impl_->stage_ms_avg;
     return impl_->runtime ? impl_->runtime->average_gpu_ms() : 0.0f;
 }
 
 float Session::network_ms() const {
+    if (impl_->renodx_timed) return impl_->stage_net_ms_avg;
     return impl_->runtime ? impl_->runtime->average_network_ms() : 0.0f;
+}
+
+void Session::network_size(uint32_t* width, uint32_t* height) const {
+    *width = impl_->runtime ? impl_->runtime->model_width() : 0;
+    *height = impl_->runtime ? impl_->runtime->model_height() : 0;
 }
 
 Session::State Session::state() const {
@@ -1135,6 +1444,12 @@ void Session::release_feature(uint64_t feature) {
     // Every network this feature may have been evaluated against holds a
     // history for it. None of them is freed here; see Runtime::release_feature.
     for (auto& e : impl_->cache) e.runtime->release_feature(feature);
+    const auto stage = impl_->renodx.find(feature);
+    if (stage != impl_->renodx.end()) {
+        for (uint32_t k = 1; k < stage->second.stack; ++k) impl_->release_everywhere(Impl::stack_feature(feature, k));
+        impl_->retire_stage(std::move(stage->second.stage));
+        impl_->renodx.erase(stage);
+    }
     log("[nr] feature #%u released", static_cast<unsigned>(feature));
 }
 
@@ -1236,7 +1551,7 @@ ID3D12Resource* Session::run(ID3D12Device* device, ID3D12GraphicsCommandList* li
                              0, 0, nullptr, 0, nullptr, 1, &out);
 
         if (motion_vk) s.runtime->record_engine(cmd, engine, controls);
-        else s.runtime->record(cmd, frame, controls);
+        else s.runtime->record(cmd, frame, controls, engine.reset);
     } catch (const std::exception& e) {
         s.status = std::string("neural rendering failed: ") + e.what();
         s.failed = true;
@@ -1321,7 +1636,7 @@ bool Session::run_after(ID3D12Device* device, ID3D12GraphicsCommandList* list,
     everything(VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
     try {
         if (motion_vk) s.runtime->record_engine(cmd, engine, controls);
-        else s.runtime->record(cmd, frame, controls);
+        else s.runtime->record(cmd, frame, controls, engine.reset);
     } catch (const std::exception& e) {
         s.status = std::string("neural rendering failed: ") + e.what();
         s.failed = true;
@@ -1347,6 +1662,386 @@ bool Session::run_after(ID3D12Device* device, ID3D12GraphicsCommandList* list,
     // ...and the part those two cannot reach: vkd3d's memory of what is bound in
     // the Vulkan command buffer itself. Without this, the second neural pass in
     // one command list leaves every following caller dispatch running our kernel.
+    s.forget_bound_pipeline(device, list);
+    return true;
+}
+
+// The RenoDX-style option, shared by every route: the network at the frame's extent on RenoDX's proxy
+// (RGBA16F, the DLL's own composition), ready or building in the background.
+bool Session::Impl::renodx_runtime(const Controls& controls, uint32_t w, uint32_t h, Controls* c) {
+    // The network sees RenoDX's proxy and answers into the stage's own image, one pass: what RenoDX's
+    // feature 18 evaluate is. Preprocess runs inside RenoDX's processing (RenoDXFrame::preprocess), not here.
+    *c = controls;
+    c->preprocess = Preprocess{};
+    c->passes = 1;
+    // NR's switch is [RenoDX] NeuralUplift (the stage passes the frame through when it is off); the route's own
+    // Enabled / Apply model do not apply.
+    c->enabled = true;
+    c->apply_model = true;
+    renodx_native = true;
+    const bool ok = ensure_runtime(*c, w, h, VK_FORMAT_R16G16B16A16_SFLOAT, false);
+    renodx_native = false;
+    return ok && runtime->takes_target(*c);   // the model not applied: the frame stays as it is
+}
+
+// The network's extent for this feature's frame (RenoDX's ComputeNrWorkingResolution + CommitNrResolution).
+void Session::Impl::renodx_extent(uint64_t feature, uint32_t w, uint32_t h, uint32_t guide_w, uint32_t guide_h,
+                                  const renodx::Settings& settings, uint32_t* nw, uint32_t* nh) {
+    auto& e = renodx[feature];
+    renodx::working_resolution(settings, w, h, guide_w, guide_h, nw, nh);
+    const bool settings_changed = e.scale != settings.resolution_scale || e.follow != settings.follow_input_res ||
+                                  e.w != w || e.h != h;
+    e.scale = settings.resolution_scale; e.follow = settings.follow_input_res;
+    if (e.applied_w == 0 || settings_changed || (*nw == e.applied_w && *nh == e.applied_h)) {
+        e.applied_w = *nw; e.applied_h = *nh;
+        e.pending_frames = 0;
+        return;
+    }
+    // The game's guides changed size: taken only once it has held.
+    if (*nw != e.pending_w || *nh != e.pending_h) { e.pending_w = *nw; e.pending_h = *nh; e.pending_frames = 0; }
+    if (++e.pending_frames >= renodx::kContractDebounceFrames) {
+        e.applied_w = *nw; e.applied_h = *nh;
+        e.pending_frames = 0;
+        return;
+    }
+    *nw = e.applied_w; *nh = e.applied_h;
+}
+
+// This feature's stage at the frame's extent, the network's, format and HDR judgement (a new one, the old
+// retired, when any of them changes), with this frame's settings.
+renodx::Stage* Session::Impl::renodx_stage(uint64_t feature, uint32_t w, uint32_t h, uint32_t nw, uint32_t nh,
+                                           VkFormat format, const Session::RenoDXFrame& rf) {
+    free_retired_stages();
+    auto& e = renodx[feature];
+    if (!e.stage || e.w != w || e.h != h || e.nw != nw || e.nh != nh || e.format != format || e.hdr != rf.hdr_flag ||
+        e.present != rf.present) {
+        retire_stage(std::move(e.stage));
+        renodx::StageConfig sc;
+        sc.shaders = root + "\\dlssnr-amd\\shaders\\renodx";
+        sc.width = w; sc.height = h; sc.nr_width = nw; sc.nr_height = nh;
+        sc.frame_format = format;
+        sc.hdr_flag = rf.hdr_flag;
+        sc.present = rf.present;
+        sc.settings = rf.settings;   // the units it is made for
+        HostDevice host{};
+        host.instance = handles.instance; host.physical = handles.physical; host.device = handles.device;
+        host.queue = access.queue; host.queue_family = access.family;
+        try {
+            e.stage = std::make_unique<renodx::Stage>(host, sc);
+        } catch (const std::exception& x) {
+            status = std::string("RenoDX-style processing unavailable: ") + x.what();
+            log("[nr] %s", status.c_str());
+            failed = true;
+            return nullptr;
+        }
+        e.w = w; e.h = h; e.nw = nw; e.nh = nh; e.format = format; e.hdr = rf.hdr_flag; e.present = rf.present;
+        log("[nr] feature #%u: RenoDX-style processing at %ux%u (network %ux%u), format %d, %s", unsigned(feature), w,
+            h, nw, nh, int(format), rf.hdr_flag ? "HDR" : "not HDR");
+    }
+    try {
+        e.stage->set(rf.settings);
+    } catch (const std::exception&) {
+        // Relative <-> absolute units (NRLinearUnitNits, NRSourceEncoding): a new stage next frame.
+        retire_stage(std::move(e.stage));
+        return nullptr;
+    }
+    return e.stage.get();
+}
+
+bool Session::Impl::neutral_motion(VkCommandBuffer cmd, uint32_t w, uint32_t h, ColourFrame* out) {
+    if (!neutral_mv || neutral_w != w || neutral_h != h) {
+        if (neutral_mv) { vkDestroyImage(handles.device, neutral_mv, nullptr); neutral_mv = VK_NULL_HANDLE; }
+        if (neutral_mv_memory) { vkFreeMemory(handles.device, neutral_mv_memory, nullptr); neutral_mv_memory = VK_NULL_HANDLE; }
+        VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ci.imageType = VK_IMAGE_TYPE_2D; ci.format = VK_FORMAT_R16G16_SFLOAT; ci.extent = {w, h, 1};
+        ci.mipLevels = ci.arrayLayers = 1; ci.samples = VK_SAMPLE_COUNT_1_BIT; ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ci.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                   VK_IMAGE_USAGE_STORAGE_BIT;
+        if (vkCreateImage(handles.device, &ci, nullptr, &neutral_mv) != VK_SUCCESS) {
+            status = "could not create the neutral motion vectors";
+            return false;
+        }
+        VkMemoryRequirements req{}; vkGetImageMemoryRequirements(handles.device, neutral_mv, &req);
+        VkPhysicalDeviceMemoryProperties mem{}; vkGetPhysicalDeviceMemoryProperties(handles.physical, &mem);
+        uint32_t type = mem.memoryTypeCount;
+        for (uint32_t i = 0; i < mem.memoryTypeCount; ++i)
+            if ((req.memoryTypeBits & (1u << i)) && (mem.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                type = i; break;
+            }
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        ai.allocationSize = req.size; ai.memoryTypeIndex = type;
+        if (type == mem.memoryTypeCount || vkAllocateMemory(handles.device, &ai, nullptr, &neutral_mv_memory) != VK_SUCCESS ||
+            vkBindImageMemory(handles.device, neutral_mv, neutral_mv_memory, 0) != VK_SUCCESS) {
+            status = "could not back the neutral motion vectors";
+            return false;
+        }
+        neutral_w = w; neutral_h = h; neutral_cleared = false;
+    }
+    if (!neutral_cleared) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; b.newLayout = VK_IMAGE_LAYOUT_GENERAL; b.image = neutral_mv;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &b);
+        const VkClearColorValue zero{};
+        vkCmdClearColorImage(cmd, neutral_mv, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &b.subresourceRange);
+        b.oldLayout = VK_IMAGE_LAYOUT_GENERAL; b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &b);
+        neutral_cleared = true;
+    }
+    *out = {};
+    out->image = neutral_mv; out->format = VK_FORMAT_R16G16_SFLOAT; out->width = w; out->height = h;
+    out->before = out->after = VK_IMAGE_LAYOUT_GENERAL;
+    out->before_stage = out->after_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    out->before_access = out->after_access = VK_ACCESS_SHADER_READ_BIT;
+    out->usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    return true;
+}
+
+// The stage around the network, `colour` read and `output` written (they may be one image). `engine` carries
+// the motion and depth; its colour and target are the stage's.
+bool Session::Impl::record_renodx(VkCommandBuffer cmd, renodx::Stage& stage, const ColourFrame& colour,
+                                  const ColourFrame& output, EngineFrame engine, const Controls& c,
+                                  const Session::RenoDXFrame& rf, const ColourFrame* exposure) {
+    // The Present path without the game's motion vectors (NRPresentGuides Optional), or set to Never: neutral guides
+    // for the network - zero motion, no depth - and none for the look (its Detail stability is the game's vectors').
+    const bool neutral = rf.present && (rf.settings.present_guides == 2u || !engine.motion.image);
+    ColourFrame look_motion = engine.motion;
+    if (neutral) {
+        if (!neutral_motion(cmd, colour.width, colour.height, &engine.motion)) return false;
+        engine.motion_x = engine.motion_y = 0;
+        engine.motion_texture_width = colour.width; engine.motion_texture_height = colour.height;
+        engine.motion_scale_x = engine.motion_scale_y = 1.0f;
+        engine.depth = ColourFrame{};
+        look_motion = ColourFrame{};
+    }
+    renodx::StageFrame sf;
+    sf.colour = colour;
+    sf.output = output;
+    sf.reset = engine.reset;
+    sf.after_upscale = rf.after_upscale;
+    sf.motion = look_motion;
+    sf.motion_x = engine.motion_x; sf.motion_y = engine.motion_y;
+    sf.motion_scale_x = engine.motion_scale_x; sf.motion_scale_y = engine.motion_scale_y;
+    if (exposure) sf.exposure = *exposure;
+    sf.pre_exposure = rf.pre_exposure;
+    sf.exposure_scale = rf.exposure_scale;
+    sf.auto_exposure = rf.auto_exposure;
+    sf.create_flags_known = rf.create_flags_known;
+    sf.preprocess = rf.preprocess;
+    sf.present_white_nits = rf.present_white_nits;
+    const renodx::Settings& rs = rf.settings;
+    const uint32_t passes = renodx::stack_passes(rs);
+    // A shorter stack than last frame: the passes it no longer runs give their histories back (a longer one starts
+    // its new passes fresh, as RenoDX's own does).
+    // Each pass on a history of its own. The ReShade routes run as feature 0, the runtime's own unnamed history,
+    // which it neither saves nor restores around a named one: stacked there, pass 1 takes a name too (else passes 1
+    // and 2 would read each other's history every frame).
+    const uint64_t named = engine.feature ? engine.feature : kUnnamedStack;
+    const auto pass_feature = [&](uint32_t k) { return engine.feature || passes > 1 ? stack_feature(named, k) : 0; };
+    auto& entry = renodx[engine.feature];
+    for (uint32_t k = passes; k < entry.stack; ++k) release_everywhere(stack_feature(named, k));
+    if (!engine.feature && passes == 1 && entry.stack > 1) release_everywhere(named);
+    entry.stack = passes;
+    // RenoDX's guides: NRDepthMode overrides the game's depth direction, NRMVecScaleX / Y scale its motion vectors
+    // (the network's and the look's).
+    if (rs.depth_mode == 1u) engine.depth_inverted = false;
+    if (rs.depth_mode == 2u) engine.depth_inverted = true;
+    engine.motion_scale_x *= rs.mvec_scale_x;
+    engine.motion_scale_y *= rs.mvec_scale_y;
+    sf.motion_scale_x = engine.motion_scale_x; sf.motion_scale_y = engine.motion_scale_y;
+    // Pass k's controls, RenoDX's (the route's own do not apply with the option on): pass 1's, or pass k's once its
+    // "Same as pass 1" is off (PassModel; the intensity is always the pass's own, PassIntensity); with
+    // NRSkinIndependent and the Character mask on, Structure at most 1 and a stock Skin sent as 1 (SentSkinSteering).
+    const auto pass_controls = [&](uint32_t pass) {
+        const uint32_t k = std::min(pass, 3u);   // passes 5.. (NRUnlockPasses) take pass 4's controls
+        Controls ck = c;
+        ck.per_pass.clear();
+        ck.passes = 1;
+        const bool own = k > 0 && !rs.pass_follow[k - 1];
+        ck.intensity = k == 0 ? rs.intensity : rs.pass_intensity[k - 1];
+        ck.style = int(own ? rs.pass_style[k - 1] : rs.style);
+        ck.local_tone = own ? rs.pass_local_tone[k - 1] : rs.local_tone;
+        ck.local_structure = own ? rs.pass_local_structure[k - 1] : rs.local_structure;
+        ck.skin_structure = own ? rs.pass_skin_structure[k - 1] : rs.skin_structure;
+        ck.automatic_mask = own ? rs.pass_auto_mask[k - 1] : rs.auto_mask;
+        if (rs.skin_independent && ck.automatic_mask) {
+            ck.local_structure = std::min(ck.local_structure, 1.0f);
+            if (ck.skin_structure < 0.0f) ck.skin_structure = 1.0f;
+        }
+        return ck;
+    };
+    const bool timed = stage_timing_ready();
+    const uint32_t slot = stage_slot, base = slot * kStageQueries;
+    uint32_t timed_passes = 0;
+    // RenoDX's NR screenshot. The final picture before and after NR: the presented frame on the ReShade route,
+    // OptiScaler's finished picture on its route (NR moved there for the capture, nr_pe_optifix.cpp; `clean`: no NR
+    // ran on it inline). The model's input and output: the last pass's, after it ran.
+    shot_poll();
+    std::unique_ptr<Shot> capture;
+    const bool final_frame = rf.present != 0 || rf.finished;
+    if (!shot && rs.nr_enabled && screenshot::wants_final() && final_frame && rf.clean) {
+        if (!screenshot::readable(colour.format)) {
+            screenshot::fail("unsupported_present", "the frame's format cannot be read back");
+        } else if ((colour.usage && !(colour.usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) ||
+                   (output.usage && !(output.usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT))) {
+            screenshot::fail("unsupported_present", "the frame cannot be copied (no transfer use)");
+        } else if (!(capture = shot_prepare(colour.width, colour.height, colour.format))) {
+            screenshot::abandon("allocation_failed", "the readback buffers could not be allocated");
+        } else {
+            // HDR stays HDR: PQ codes as they are, scRGB (1.0 = 80 nits) encoded to PQ; SDR as display codes. The
+            // Present path knows the swap chain's encoding; OptiScaler's finished picture is the back buffer, where a
+            // float format is scRGB (DXGI's only float encoding) and 10 bits are PQ when OptiScaler judged it HDR.
+            const bool pq = colour.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ||
+                            colour.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+            const bool linear = colour.format == VK_FORMAT_R16G16B16A16_SFLOAT ||
+                                colour.format == VK_FORMAT_R32G32B32A32_SFLOAT ||
+                                colour.format == VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+            capture->pair.hdr_mode = rf.present ? (rf.present == 2 ? 2 : rf.present == 3 ? 1 : 0)
+                                                : linear ? 1 : pq && rf.hdr_flag ? 2 : 0;
+            capture->pair.linear_unit_nits = 80.0f;
+            capture->pair.meta = std::string("path=") + (rf.present ? "present" : "optiscaler-finished-picture") +
+                                 "\ncomparison=final-picture-before-after-nr\nstack=" + std::to_string(passes) +
+                                 "\nwidth=" + std::to_string(colour.width) + "\nheight=" + std::to_string(colour.height) +
+                                 "\nsource_format=" + std::to_string(int(colour.format)) +
+                                 "\nhdr_mode=" + std::to_string(capture->pair.hdr_mode) + "\n";
+            shot_copy(cmd, *capture, colour.image, colour.before, colour.before_stage, colour.before_access, 0);
+        }
+    } else if (screenshot::armed() && !rs.nr_enabled) {
+        screenshot::fail("nr_disabled", "enable NR before taking a comparison");
+    }
+    const bool model_capture = !shot && !capture && rs.nr_enabled && screenshot::wants_model();
+    const renodx::Stage::Network network = [&](uint32_t k, const ColourFrame& proxy, const ColourFrame& neural, bool reset) {
+        EngineFrame e = engine;
+        e.colour = proxy;
+        e.target = neural;
+        e.reset = reset;
+        e.feature = pass_feature(k);
+        const bool time_net = timed && timed_passes < renodx::kMaxUnlockedPasses;
+        if (time_net) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, stage_timing, base + 2 + 2 * timed_passes);
+        runtime->record_engine(cmd, e, pass_controls(k));
+        if (time_net) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, stage_timing, base + 3 + 2 * timed_passes++);
+        // RenoDX's model diagnostic: the last pass's proxy and network output, sRGB previews (not the displayed frame).
+        if (model_capture && k + 1 == passes && !shot && proxy.format == neural.format && proxy.width == neural.width &&
+            proxy.height == neural.height && screenshot::readable(proxy.format)) {
+            if (auto sh = shot_prepare(proxy.width, proxy.height, proxy.format)) {
+                sh->pair.model_diagnostic = true;
+                sh->pair.hdr_mode = 0;
+                sh->pair.meta = std::string("path=") + (rf.present ? "present" : "optiscaler") +
+                                "\ncomparison=model-pass-input-output\ndisplay_reference=0"
+                                "\nsource=model-proxy-and-neural-output\npng=rgb8-srgb-clipped-preview"
+                                "\nencoding=srgb\nunits=model-proxy-relative"
+                                "\nstage=before-look-transfer-and-game-tonemap"
+                                "\nexcluded=look,transfer,pedestal,game-upscale,game-tonemap,UI"
+                                "\ninput_includes_previous_stack_passes=" + std::string(k ? "1" : "0") +
+                                "\nstack_pass=" + std::to_string(k + 1) + "\nstack=" + std::to_string(passes) +
+                                "\nwidth=" + std::to_string(proxy.width) + "\nheight=" + std::to_string(proxy.height) +
+                                "\nsource_format=" + std::to_string(int(proxy.format)) + "\n";
+                shot_copy(cmd, *sh, proxy.image, proxy.after, proxy.after_stage, proxy.after_access, 0);
+                shot_copy(cmd, *sh, neural.image, neural.after, neural.after_stage, neural.after_access, sh->bytes);
+                shot_recorded(cmd, std::move(sh));
+            } else {
+                screenshot::abandon("allocation_failed", "model diagnostic readback buffers could not be allocated");
+            }
+        }
+    };
+    if (timed) {
+        vkCmdResetQueryPool(cmd, stage_timing, base, kStageQueries);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, stage_timing, base);
+    }
+    try {
+        stage.record(cmd, sf, network);
+        if (capture) {
+            shot_copy(cmd, *capture, output.image, output.after, output.after_stage, output.after_access, capture->bytes);
+            shot_recorded(cmd, std::move(capture));
+        }
+        if (timed) {
+            vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, stage_timing, base + 1);
+            stage_slot_passes[slot] = timed_passes;
+            ++stage_recorded;
+            stage_slot = (slot + 1) % kStageSlots;
+            read_stage_timing();
+        }
+        renodx_timed = timed;
+    } catch (const std::exception& x) {
+        if (capture) {   // its pre-NR copy may be in the command buffer: kept until the session goes
+            screenshot::abandon("failed", "RenoDX-style processing failed during the capture");
+            shots_out.push_back(std::move(capture));
+        }
+        status = std::string("RenoDX-style processing failed: ") + x.what();
+        failed = true;
+        log("[nr] %s", status.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool Session::run_renodx(ID3D12Device* device, ID3D12GraphicsCommandList* list,
+                         ID3D12Resource* output, D3D12_RESOURCE_STATES output_state,
+                         const EngineResources& resources, const Controls& controls,
+                         ID3D12Resource* input, D3D12_RESOURCE_STATES input_state, const RenoDXFrame& rf) {
+    auto& s = *impl_;
+    if (s.failed || !device || !list || !output || !input) return false;
+    if (!resources.motion && Impl::renodx_needs_motion(rf)) return false;
+    s.status.clear();
+    if (!s.ensure_d3d12_device(device)) return false;
+    const VkCommandBuffer cmd = command_buffer(list);
+    if (!cmd) { s.status = "the command list exposes no Vulkan handle"; s.failed = true; return false; }
+    const auto target = colour_handle(device, output, output_state);
+    if (!target.usable()) { s.status = describe_rejection(target, "output"); return false; }
+    const auto source = input == output ? target : colour_handle(device, input, input_state);
+    if (!source.usable()) { s.status = describe_rejection(source, "colour"); return false; }
+    if (source.format != target.format || source.width != target.width || source.height != target.height) {
+        s.status = "RenoDX-style: the colour and the output differ in format or extent";
+        return false;
+    }
+    const uint32_t w = target.width, h = target.height;
+    const auto motion_vk = resources.motion ? resource_handle(device, resources.motion, resources.motion_state)
+                                            : decltype(resource_handle(device, resources.motion, resources.motion_state)){};
+    uint32_t nw = w, nh = h;
+    s.renodx_extent(resources.feature, w, h,
+                    resources.motion_subrect.width ? resources.motion_subrect.width : motion_vk.width,
+                    resources.motion_subrect.height ? resources.motion_subrect.height : motion_vk.height,
+                    rf.settings, &nw, &nh);
+    Controls c;
+    if (!s.renodx_runtime(controls, nw, nh, &c)) return false;
+    renodx::Stage* stage = s.renodx_stage(resources.feature, w, h, nw, nh, target.format, rf);
+    if (!stage) return false;
+    ColourFrame colour{}, out{};
+    fill(&colour, source);
+    fill(&out, target);
+    EngineFrame engine{};
+    engine.feature = resources.feature;
+    engine.reset = resources.reset;
+    engine.motion_scale_x = resources.motion_scale_x;
+    engine.motion_scale_y = resources.motion_scale_y;
+    engine.depth_inverted = resources.depth_inverted;
+    if (resources.motion) {
+        if (!fill(&engine.motion, motion_vk)) return false;
+        engine.motion_texture_width = engine.motion.width; engine.motion_texture_height = engine.motion.height;
+        apply_guide_subrect(&engine.motion, resources.motion_subrect, "motion-vector", &engine.motion_x, &engine.motion_y);
+    }
+    if (resources.depth &&
+        fill(&engine.depth, resource_handle(device, resources.depth, resources.depth_state)))
+        apply_guide_subrect(&engine.depth, resources.depth_subrect, "depth", &engine.depth_x, &engine.depth_y);
+    // As run_after: full barriers on both sides, vkd3d's tracked compute state forgotten afterwards.
+    const auto everything = [&](VkAccessFlags src_access, VkAccessFlags dst_access) {
+        VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        mb.srcAccessMask = src_access; mb.dstAccessMask = dst_access;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             0, 1, &mb, 0, nullptr, 0, nullptr);
+    };
+    ColourFrame exposure{};
+    const bool have_exposure = rf.exposure && fill(&exposure, resource_handle(device, rf.exposure, rf.exposure_state));
+    everything(VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    if (!s.record_renodx(cmd, *stage, colour, out, engine, c, rf, have_exposure ? &exposure : nullptr)) return false;
+    everything(VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    list->SetPipelineState(nullptr);
+    list->SetComputeRootSignature(nullptr);
     s.forget_bound_pipeline(device, list);
     return true;
 }
@@ -1436,9 +2131,22 @@ bool Session::run_d3d11(const D3D11Frame& frame, const Controls& controls) {
         s.status = "the game's texture cannot be copied to and from; nothing to run on";
         return false;
     }
-    if (!s.ensure_runtime(controls, target.width, target.height, target.format,
-                          (frame.upscaler_input || frame.linear_hdr) && !frame.estimate_motion &&
-                          Session::Impl::is_linear_format(target.format))) return false;
+    Controls renodx_controls{};
+    renodx::Stage* renodx_stage = nullptr;
+    if (frame.renodx) {
+        if (!frame.motion && Impl::renodx_needs_motion(*frame.renodx)) {
+            s.status = "the RenoDX-style option needs the motion vectors";
+            return false;
+        }
+        const auto mv = frame.motion ? d3d11_image(frame.motion, frame.device) : decltype(d3d11_image(frame.motion, frame.device)){};
+        uint32_t nw = target.width, nh = target.height;
+        s.renodx_extent(0, target.width, target.height, mv.width, mv.height, frame.renodx->settings, &nw, &nh);
+        if (!s.renodx_runtime(controls, nw, nh, &renodx_controls)) return false;
+        if (!(renodx_stage = s.renodx_stage(0, target.width, target.height, nw, nh, target.format, *frame.renodx)))
+            return false;
+    } else if (!s.ensure_runtime(controls, target.width, target.height, target.format,
+                                 (frame.upscaler_input || frame.linear_hdr) && !frame.estimate_motion &&
+                                 Session::Impl::is_linear_format(target.format))) return false;
     if (!s.ensure_own_command_buffer()) return false;
     if (!s.wait_for_own_cmd()) return false;
 
@@ -1467,12 +2175,18 @@ bool Session::run_d3d11(const D3D11Frame& frame, const Controls& controls) {
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkResetCommandBuffer(s.own_cmd, 0);
         vkBeginCommandBuffer(s.own_cmd, &bi);
-        if (motion) s.runtime->record_engine(s.own_cmd, engine, controls);
+        if (renodx_stage) {
+            if (!motion && Impl::renodx_needs_motion(*frame.renodx)) { vkEndCommandBuffer(s.own_cmd); return false; }
+            if (!s.record_renodx(s.own_cmd, *renodx_stage, colour, colour, engine, renodx_controls, *frame.renodx)) {
+                vkEndCommandBuffer(s.own_cmd);
+                return false;
+            }
+        } else if (motion) s.runtime->record_engine(s.own_cmd, engine, controls);
         else if (frame.estimate_motion) {
             TemporalFrame temporal{}; temporal.reset = frame.reset;
             s.runtime->record_temporal(s.own_cmd, colour, controls, temporal);
         } else {
-            s.runtime->record(s.own_cmd, colour, controls);
+            s.runtime->record(s.own_cmd, colour, controls, frame.reset);
         }
         vkEndCommandBuffer(s.own_cmd);
     } catch (const std::exception& e) {
@@ -1633,6 +2347,23 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
     // A Vulkan game gives us no D3D12 resource to hand back, so the output is a
     // plain VkImage of our own rather than one borrowed from a D3D12 allocation -
     // unless the caller takes the answer in its own image (VulkanFrame::in_place).
+    Controls renodx_controls{};
+    renodx::Stage* renodx_stage = nullptr;
+    if (frame.renodx) {
+        if (!frame.motion && Impl::renodx_needs_motion(*frame.renodx)) {
+            s.status = "the RenoDX-style option needs the motion vectors";
+            return VK_NULL_HANDLE;
+        }
+        uint32_t nw = frame.width, nh = frame.height;
+        s.renodx_extent(frame.feature, frame.width, frame.height,
+                        frame.motion_subrect.width ? frame.motion_subrect.width : frame.motion_width,
+                        frame.motion_subrect.height ? frame.motion_subrect.height : frame.motion_height,
+                        frame.renodx->settings, &nw, &nh);
+        if (!s.renodx_runtime(controls, nw, nh, &renodx_controls)) return VK_NULL_HANDLE;
+        if (!(renodx_stage = s.renodx_stage(frame.feature, frame.width, frame.height, nw, nh, frame.colour_format,
+                                            *frame.renodx)))
+            return VK_NULL_HANDLE;
+    } else {
     if (!frame.in_place && !s.vk_output_valid(frame.width, frame.height, frame.colour_format)) {
         if (!s.ensure_vk_output(frame.width, frame.height, frame.colour_format))
             return VK_NULL_HANDLE;
@@ -1641,6 +2372,7 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
                           (frame.upscaler_input || frame.linear_hdr) &&
                               Session::Impl::is_linear_format(frame.colour_format)))
         return VK_NULL_HANDLE;
+    }
 
     ColourFrame colour{};
     colour.image = frame.in_place ? frame.colour : s.vk_output;
@@ -1677,6 +2409,7 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
         engine.motion.width = frame.motion_width;
         engine.motion.height = frame.motion_height;
         engine.motion.before = engine.motion.after = frame.motion_layout;
+        engine.motion.usage = frame.motion_usage;
         engine.motion_texture_width = engine.motion.width; engine.motion_texture_height = engine.motion.height;
         apply_guide_subrect(&engine.motion, frame.motion_subrect, "motion-vector", &engine.motion_x, &engine.motion_y);
     }
@@ -1686,9 +2419,30 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
         engine.depth.width = frame.depth_width;
         engine.depth.height = frame.depth_height;
         engine.depth.before = engine.depth.after = frame.depth_layout;
+        engine.depth.usage = frame.depth_usage;
         apply_guide_subrect(&engine.depth, frame.depth_subrect, "depth", &engine.depth_x, &engine.depth_y);
     }
 
+    if (renodx_stage) {
+        ColourFrame in{}, out{};
+        in.image = frame.colour; in.format = frame.colour_format; in.width = frame.width; in.height = frame.height;
+        in.before = in.after = frame.colour_layout; in.usage = frame.colour_usage;
+        const bool to_output = !frame.in_place && frame.output;
+        out = in;
+        if (to_output) {
+            out.image = frame.output; out.before = out.after = frame.output_layout; out.usage = frame.output_usage;
+        }
+        ColourFrame exposure{};
+        const ColourFrame* ex = nullptr;
+        if (frame.renodx->vk_exposure) {
+            exposure.image = frame.renodx->vk_exposure; exposure.format = frame.renodx->vk_exposure_format;
+            exposure.width = frame.renodx->vk_exposure_width; exposure.height = frame.renodx->vk_exposure_height;
+            exposure.before = exposure.after = VK_IMAGE_LAYOUT_GENERAL;
+            ex = &exposure;
+        }
+        if (!s.record_renodx(cmd, *renodx_stage, in, out, engine, renodx_controls, *frame.renodx, ex)) return VK_NULL_HANDLE;
+        return out.image;
+    }
     if (direct) {
         try {
             s.runtime->record_engine(cmd, engine, controls);
@@ -1703,7 +2457,7 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
     if (frame.in_place) {
         try {
             if (frame.motion) s.runtime->record_engine(cmd, engine, controls);
-            else s.runtime->record(cmd, colour, controls);
+            else s.runtime->record(cmd, colour, controls, engine.reset);
         } catch (const std::exception& e) {
             s.status = std::string("neural rendering failed: ") + e.what();
             s.failed = true;
@@ -1733,7 +2487,7 @@ VkImage Session::run_vulkan(const DeviceHandles& handles, VkCommandBuffer cmd,
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                              0, 0, nullptr, 0, nullptr, 1, &b);
         if (frame.motion) s.runtime->record_engine(cmd, engine, controls);
-        else s.runtime->record(cmd, colour, controls);
+        else s.runtime->record(cmd, colour, controls, engine.reset);
     } catch (const std::exception& e) {
         s.status = std::string("neural rendering failed: ") + e.what();
         s.failed = true;

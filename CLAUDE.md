@@ -25,11 +25,15 @@ Notes for contributors and coding assistants. README.md covers what the project 
   reordering.
   The optional int4 mixed network (`NR_INT4=1`, `linux/shaders/rdna4/pipelines-int4.json`) is the one
   exception: it trades precision for speed by design and is installed only when asked for.
+- **RenoDX's shaders stay RenoDX's.** `linux/shaders/renodx/` is RenoDX's code under its MIT licence; changes
+  there are speed changes that leave every output bit as it was, each listed in the README in that folder.
 - **Weight packing.** A new kernel that reads weights must be added to the host's weight packing
   (`nr_graph.cpp`); otherwise it runs on unpacked data and its results are meaningless.
 - **Reproducible shaders.** `fetch_deps.sh` pins glslang 16.5.0; with it `build_network.py` produces the
-  same SPIR-V bytes every time. After a change that should not alter the arithmetic (refactor,
-  comments, scheduling of independent work), compare the `.spv` files before and after.
+  same SPIR-V bytes every time. RenoDX's shaders (`linux/shaders/renodx`, the RenoDX style) are built
+  with the pinned Slang 2026.19 by `linux/build/build_renodx.sh`. After a change that should not alter
+  the arithmetic (refactor, comments, scheduling of independent work), compare the `.spv` files before
+  and after.
 
 ## Performance work on RDNA4 (RADV / ACO)
 

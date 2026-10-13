@@ -51,12 +51,16 @@ common=(-std=c++17 -O2 -DNDEBUG -DNR_BUILD_STAMP="\"$stamp\"" -Itoolchain/Vulkan
 source linux/build/arch/rdna4.sh
 "$cxx" "${common[@]}" "${NR_PRODUCT_DEFINES[@]}" -c linux/src/core/nr_runtime.cpp -o "$out/nr_runtime.o"
 "$cxx" "${common[@]}" -c linux/src/core/nr_native_plan.cpp -o "$out/nr_native_plan.o"
+"$cxx" "${common[@]}" -c linux/src/core/nr_renodx.cpp -o "$out/nr_renodx.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_log.cpp -o "$out/log.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_interop.cpp -o "$out/interop.o"
 "$cxx" "${common[@]}" -I"$minhook/include" -c linux/src/pe/nr_pe_vkdevice.cpp -o "$out/vkdevice.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_session.cpp -o "$out/session.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_config.cpp -o "$out/config.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_dlssnr_model.cpp -o "$out/model.o"
+"$cxx" "${common[@]}" -c linux/src/pe/nr_pe_renodx_route.cpp -o "$out/renodx_route.o"
+"$cxx" "${common[@]}" -I"$minhook/include" -c linux/src/pe/nr_pe_control.cpp -o "$out/control.o"
+"$cxx" "${common[@]}" -c linux/src/pe/nr_screenshot.cpp -o "$out/screenshot.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_dlssnr_forwarder.cpp -o "$out/forwarder.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_ngx_core.cpp -o "$out/ngx_core.o"
 "$cxx" "${common[@]}" -I"$minhook/include" -c linux/src/pe/nr_pe_optifix.cpp -o "$out/optifix.o"
@@ -75,7 +79,7 @@ ldflags=(-ld3d12 -ldxgi -lole32 -static -static-libgcc -static-libstdc++)
 # import of vulkan-1.dll forces winevulkan up before the game's graphics stack, which has killed a
 # real game. This link is expected to fail; its failure is the input to the next step.
 shared_objs=("$out/model.o" "$out/session.o" "$out/config.o" "$out/interop.o" "$out/log.o" "$out/vkdevice.o"
-             "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out"/mh_*.o)
+             "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o" "$out/renodx_route.o" "$out/control.o" "$out/screenshot.o" "$out"/mh_*.o)
 forwarder_objs=("$out/forwarder.o" "${shared_objs[@]}")
 core_objs=("$out/ngx_core.o" "$out/optifix.o" "${shared_objs[@]}")
 # Both links contribute undefined vk* names; the probe link takes every object either DLL uses so one

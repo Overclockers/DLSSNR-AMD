@@ -41,14 +41,16 @@ common=(-std=c++17 -O2 -DNDEBUG -Itoolchain/Vulkan-Headers/include -Ilinux/src -
 [[ "${NR_INT4:-0}" == 1 ]] && common+=(-DNR_INT4=1)   # the int4 mixed build of the programs (int4/ below)
 "$cxx" "${common[@]}" "${NR_PRODUCT_DEFINES[@]}" -c linux/src/core/nr_runtime.cpp -o "$out/nr_runtime.o"
 "$cxx" "${common[@]}" -c linux/src/core/nr_native_plan.cpp -o "$out/nr_native_plan.o"
+"$cxx" "${common[@]}" -c linux/src/core/nr_renodx.cpp -o "$out/nr_renodx.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_log.cpp -o "$out/log.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_interop.cpp -o "$out/interop.o"
 "$cxx" "${common[@]}" -I"$minhook/include" -c linux/src/pe/nr_pe_vkdevice.cpp -o "$out/vkdevice.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_session.cpp -o "$out/session.o"
 "$cxx" "${common[@]}" -c linux/src/pe/nr_pe_config.cpp -o "$out/config.o"
+"$cxx" "${common[@]}" -c linux/src/pe/nr_screenshot.cpp -o "$out/screenshot.o"
 # ReShade's headers include <Windows.h>; the case shim maps that onto mingw's.
 "$cxx" "${common[@]}" -Ilinux/src/pe/reshade_compat -I"$reshade_inc" -I"$minhook/include" \
-    -Iartifacts/ref/DLSS5-Feeder/external/imgui -c linux/src/pe/nr_reshade_addon.cpp -o "$out/reshade_addon.o"
+    -Iartifacts/ref/DLSS5-Feeder/external/imgui -Ilinux/src/ui -c linux/src/pe/nr_reshade_addon.cpp -o "$out/reshade_addon.o"
 for unit in hook buffer trampoline; do
     "$cc" -O2 -I"$minhook/include" -I"$minhook/src" -c "$minhook/src/$unit.c" -o "$out/mh_$unit.o"
 done
@@ -63,8 +65,8 @@ ldflags=(-ld3d12 -ldxgi -ldwmapi -lgdi32 -lole32 -static -static-libgcc -static-
 # Hunter Wilds dies from that). Every vk* call goes through a pointer instead,
 # filled by nr_vk_load() once the game has loaded Vulkan. The symbol list is
 # whatever a trial link reports as undefined, so it cannot go stale.
-runtime_objs=("$out/session.o" "$out/config.o" "$out/interop.o" "$out/log.o" "$out/vkdevice.o"
-              "$out/nr_runtime.o" "$out/nr_native_plan.o")
+runtime_objs=("$out/session.o" "$out/config.o" "$out/screenshot.o" "$out/interop.o" "$out/log.o" "$out/vkdevice.o"
+              "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o")
 undefined=$({ "$cxx" -shared -o /dev/null "$out/reshade_addon.o" "${runtime_objs[@]}" \
     "$out"/mh_*.o "${ldflags[@]}" 2>&1 || true; } |
     grep -o "undefined reference to \`_*vk[A-Za-z0-9_@]*'" | sed "s/.*\`//; s/'//" | sort -u)
@@ -212,6 +214,8 @@ if [[ "$arch" == x86_64 ]]; then
           "$pkg/optiscaler/"
     cp -- artifacts/optiscaler/nr/_nvngx.dll "$pkg/optiscaler/dlssnr_core.dll"
     cp -- linux/package/optiscaler/extract_release.py linux/package/optiscaler/patch_ini.py "$pkg/optiscaler/"
+    # NR Control, the OptiScaler routes' NR menu (a Linux Vulkan layer; installed into dlssnr-amd/control/layer)
+    bash linux/build/build_control_layer.sh "$pkg/optiscaler/control/layer" > /dev/null
 fi
 
 # dlssnr-amd.ini, put in place at install (the text the programs write themselves, linux/package/make_ini.py)

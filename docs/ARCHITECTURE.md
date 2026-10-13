@@ -36,12 +36,12 @@ OptiScaler's file is not modified; a few defects of the bundled release are corr
 it loads the core (`linux/src/pe/nr_pe_optifix.cpp`, listed in `linux/package/optiscaler/README.md`).
 The motion vectors and depth are the engine's own, not estimated as in the ReShade routes.
 
-**`reshade` route.** For games without an upscaler to hook, a ReShade add-on (the design follows
+**`reshade-feeder` route.** For games without an upscaler to hook, a ReShade add-on (the design follows
 [DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder)) takes the back buffer, depth from
 ReShade and motion vectors computed by the vort_Shaders motion-estimation effect, and runs the
 network on it through the same DXVK / vkd3d-proton interop. ReShade is installed as `dxgi.dll`.
 
-**`dx9` / `vulkan` routes.** D3D9 is the hard case. ReShade's D3D9 backend only gives an add-on D3D9
+**`reshade-feeder-dx9` / `reshade-feeder-vulkan` routes.** D3D9 is the hard case. ReShade's D3D9 backend only gives an add-on D3D9
 objects, and D3D9 has no compute shaders at all, so there is nothing to run the network on. Under
 Proton, though, a D3D9 game's `d3d9.dll` is DXVK, which renders it with Vulkan. So the route loads
 ReShade not into D3D9 but as a **Vulkan layer underneath DXVK**: ReShade then sees a Vulkan game, and
@@ -56,10 +56,25 @@ the add-on gets a real `VkDevice`. That needs three pieces of plumbing:
 - A `winevulkan.dll` forwarder. DXVK loads `winevulkan.dll` directly, ReShade looks for
   `vulkan-1.dll`; a forwarder whose exports all point at our `vulkan-1.dll` gives both the same loader
   instance. The real `winevulkan.dll` is then loaded by the loader as the driver, by its full path.
-- A depth setting. Old D3D9 games use conventional depth, not reversed-Z; `dx9` installs a ReShade
-  preset with `RESHADE_DEPTH_INPUT_IS_REVERSED=0`, otherwise it is the `vulkan` route.
+- A depth setting. Old D3D9 games use conventional depth, not reversed-Z; `reshade-feeder-dx9` installs a
+  ReShade preset with `RESHADE_DEPTH_INPUT_IS_REVERSED=0`, otherwise it is the `reshade-feeder-vulkan` route.
 
 Native Vulkan games use the same route: ReShade as a layer under the game's own Vulkan device.
+
+**NR Control.** On the OptiScaler route the NR menu (End) is a Linux Vulkan layer
+(`linux/src/layer/nr_control_layer.cpp`, menu contents in `linux/src/ui/nr_control_ui.hpp`, shared with the
+ReShade Add-ons page). It draws into an image of its own and composites it in the swap chain's encoding.
+It calls the next layer through its dispatch table only. It talks to the NGX core (a Windows DLL in the
+same process under Proton) through `dlssnr-amd/control.bin` (`linux/src/core/nr_control_shared.hpp`):
+status from the core, settings through `dlssnr-amd.ini`, and on Wayland the keyboard and mouse, which the
+core reads from the game window.
+
+**RenoDX style.** `[RenoDX] Enabled = 1` wraps the network in RenoDX's DLSS5 processing on every route
+(`linux/src/core/nr_renodx.cpp`): RenoDX's encode, look and resolve shaders (`linux/shaders/renodx`,
+compiled by Slang as RenoDX builds its Vulkan path), with the network as the model in between. On D3D12
+games on the OptiScaler route a hook on OptiScaler's NR pass (`linux/src/pe/nr_pe_optifix.cpp`,
+`linux/src/pe/nr_pe_renodx_route.hpp`) makes it hand the core the frame as it is and take the answer back as
+it is, so OptiScaler's own NR processing and NR settings do not apply.
 
 **Windows.** A native D3D game on Windows has no Vulkan device underneath it. DirectX 10/11/12 games
 keep the system's D3D, and the network runs on a Vulkan device of its own, created on the adapter the
@@ -118,11 +133,14 @@ because it fits the job better:
 linux/                 the Linux version (the reference implementation)
   src/core/              network runtime: graph, Vulkan helpers, planner
   src/pe/                the Windows DLLs as run under Proton: OptiScaler backend, ReShade add-on
+  src/layer/             NR Control, the OptiScaler route's NR menu (a Linux Vulkan layer); int4 mixed's layer
+  src/ui/                menu contents shared by NR Control and the ReShade add-on
   shaders/rdna4/         the network (pipelines.json lists every pipeline and its defines)
   shaders/passes/        the passes around it (encode, transfer, motion estimation)
+  shaders/renodx/        RenoDX's shaders for the RenoDX style (MIT, with its licence)
   build/                 build_network.py, build_package.sh, build_optiscaler_nr.sh, ...
   package/               installer, README and model-tools/ (model extraction)
-  vulkan-loader/         patches for the Khronos loader used by the vulkan/dx9 routes
+  vulkan-loader/         patches for the Khronos loader used by the reshade-feeder-vulkan/-dx9 routes
 windows/               a separate copy for the AMD Windows driver, changed on its own
   data/aco/              ACO machine code of the Linux network, for [Network] ACO Mode = 1
 fetch_deps.sh          pinned third-party downloads

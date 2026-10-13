@@ -103,31 +103,67 @@ None of these measurements use frame generation; the OptiScaler route can turn i
 
 | Game uses | Linux | Windows |
 | --- | --- | --- |
-| **DirectX 12** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade` | OptiScaler or ReShade |
-| **DirectX 11** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade` | OptiScaler or ReShade |
-| **DirectX 10** | `reshade` | ReShade |
-| **DirectX 9** | `dx9` | ReShade (DX9) |
-| **Vulkan** | `vulkan` | ReShade |
+| **DirectX 12** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade-feeder` | OptiScaler or ReShade |
+| **DirectX 11** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade-feeder` | OptiScaler or ReShade |
+| **DirectX 10** | `reshade-feeder` | ReShade |
+| **DirectX 9** | `reshade-feeder-dx9` | ReShade (DX9) |
+| **Vulkan** | `reshade-feeder-vulkan` | ReShade |
 | OpenGL | not supported | not supported |
 
 - **`optiscaler`**: for games with a DLSS, FSR or XeSS option. Uses
   [OptiScaler-NR](https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass) with this project as its
   DLSS-NR backend, and the game's own motion vectors. 64-bit games only.
-- **`reshade`**: for other DirectX 10/11/12 games. Runs through ReShade; motion is estimated from the
-  picture by a ReShade shader.
-- **`vulkan` / `dx9`**: for Vulkan and DirectX 9 games. On Linux, DirectX 9 games run on Vulkan through
-  DXVK, and ReShade is loaded as a Vulkan layer underneath it. `dx9` also sets the depth direction old
-  DirectX 9 games use.
+- **`reshade-feeder`**: for other DirectX 10/11/12 games. Runs through ReShade; motion is estimated from
+  the picture by a ReShade shader.
+- **`reshade-feeder-vulkan` / `reshade-feeder-dx9`**: for Vulkan and DirectX 9 games. On Linux, DirectX 9
+  games run on Vulkan through DXVK, and ReShade is loaded as a Vulkan layer underneath it.
+  `reshade-feeder-dx9` also sets the depth direction old DirectX 9 games use.
+
+On Linux these routes were called `reshade`, `vulkan` and `dx9` up to 0.0.4. Any route can also use the
+[RenoDX style](#renodx-style-optional).
 
 32-bit games work on Linux (use the i686 package; not with `optiscaler`). The Windows version is
 64-bit only.
+
+## NR Control (OptiScaler route)
+
+On the OptiScaler route, End opens NR Control, this project's own NR menu (a Vulkan layer in the game
+folder; the installer's launch options name it). It always has the int4 mixed and Preprocess switches.
+Where the other NR settings are:
+
+- RenoDX style on: also in NR Control - Intensity, Style, Local tone, Local structure, Skin structure,
+  passes, composition, resolution, Adjust NR's look, Detail stability, encoding and screenshots. The NR
+  settings in the OptiScaler menu are locked (changing them there has no effect); OptiScaler then only
+  does upscaling and frame generation.
+- RenoDX style off: on the DLSS Neural Rendering page of the OptiScaler menu (Insert), as before.
+
+It also shows what NR is doing (frame and network sizes, passes, NR's cost split into the network and
+the rest of the processing). It works on X11 (XWayland) and Wayland (`PROTON_ENABLE_WAYLAND=1`). While
+closed it draws nothing and submits no GPU work.
+
+## RenoDX style (optional)
+
+An install option (`--renodx`, or `[RenoDX] Enabled = 1` in `dlssnr-amd.ini`, applied after a game
+restart): the processing around NR - how the picture is handed to the network and how its result is
+put back - follows [RenoDX's DLSS5 add-on](https://github.com/PEQHUB/RenoDX-DLSS5-Generic) v8.5.0-rc10,
+with RenoDX's own shaders. The NR network itself is the same.
+
+- Every NR setting is then in `[RenoDX]`, with RenoDX's names, defaults and ranges: in NR Control on the
+  OptiScaler route (OptiScaler's own menu then only drives upscaling and frame generation), on the
+  Add-ons page on the ReShade routes.
+- The settings: Intensity, Style, Local tone, Local structure, Skin structure and the automatic mask;
+  passes with their own settings; colour and transfer strength; the network's resolution with
+  edge-aware enlargement; NR before or after the upscaler; Adjust NR's look; Detail stability; HDR and
+  encoding (HDR10 on the ReShade routes too); NR screenshots (F5: the same frame without and with NR).
+- Detail stability (Auto by default, as in RenoDX) costs extra GPU time; Off saves it.
 
 ## Preprocess (optional)
 
 `[Preprocess]` in `dlssnr-amd.ini` in the game folder changes the picture the NR network is shown (exposure,
 display curve, contrast, saturation), and so how NR edits the picture. It has two uses: a personal look in any
 game, and fixing games that do not hand their exposure to the upscaler (below). The installer writes the
-file; the ReShade routes also show the settings on the Add-ons page.
+file; the ReShade routes also show the settings on the Add-ons page, and NR Control on the OptiScaler route
+switches it on and off.
 
 - **Enabled**: off by default; when off, none of it runs. Turned on, it starts from auto exposure and the
   filmic curve.
@@ -162,11 +198,11 @@ a lower precision than the original network uses, so its picture differs somewha
 network's. Both Linux packages have it; it is chosen at install.
 
 - The installer asks once (Enter = no), or pass `--int4` or `--no-int4`.
-- With it, the Steam launch options the installer prints have two more entries, `VK_ADD_LAYER_PATH`
-  and `VK_INSTANCE_LAYERS` (a Vulkan layer in the game folder that int4 mixed needs). Copy the whole
-  line.
-- Once installed it is on. In game, Ctrl+F11 switches between int4 mixed and the default network, to
-  compare them on the same picture; a switch builds the other network in the background, which takes a
+- With it, the Steam launch options the installer prints have `VK_ADD_LAYER_PATH` and
+  `VK_INSTANCE_LAYERS` (a Vulkan layer in the game folder that int4 mixed needs; on the OptiScaler route
+  they name NR Control's layer too). Copy the whole line.
+- Once installed it is on. In game, Ctrl+F11 (or NR Control on the OptiScaler route) switches between
+  int4 mixed and the default network, to compare them on the same picture; a switch builds the other network in the background, which takes a
   few seconds (`KeepBoth = 1` keeps both networks in video memory and makes switching instant). The
   settings are in `[Int4Mixed]` in `dlssnr-amd.ini`.
 - With int4 mixed, NR takes much longer to take effect when a game starts. Until then the picture goes
@@ -202,8 +238,8 @@ bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_d
 ```
 
 The folder is the one holding the game's exe. The installer lists the routes, asks whether to add
-[int4 mixed](#int4-mixed-optional-linux), extracts the model (below) and prints the Steam launch
-options to use. `--dll` is needed only for the first install:
+[int4 mixed](#int4-mixed-optional-linux) and whether to turn on the [RenoDX style](#renodx-style-optional),
+extracts the model (below) and prints the Steam launch options to use. `--dll` is needed only for the first install:
 the extracted model is kept and reused for every later one. Needs `bash` and `python3`. See
 [linux/package/README.txt](linux/package/README.txt).
 
@@ -296,7 +332,7 @@ Tested on Ubuntu 24.04. Everything, including the Windows DLLs, is cross-compile
 ```sh
 sudo apt install git curl python3 cmake ninja-build mingw-w64 g++-multilib
 bash fetch_deps.sh                          # pinned third-party pieces -> toolchain/, artifacts/ref/
-bash linux/build/build_vulkan_loader.sh     # the patched Vulkan loader for the vulkan/dx9 routes
+bash linux/build/build_vulkan_loader.sh     # the patched Vulkan loader for the reshade-feeder-vulkan/-dx9 routes
 NR_ARCH=x86_64 bash linux/build/build_package.sh
 NR_ARCH=i686   bash linux/build/build_package.sh
 ```

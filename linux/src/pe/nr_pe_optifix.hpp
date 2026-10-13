@@ -39,4 +39,6 @@ namespace nr::pe {
 
 void fix_optiscaler();
 
+// The RenoDX-style option's hook (installed only when [RenoDX] Enabled = 1 at load): nr_pe_renodx_route.hpp.
+
 }  // namespace nr::pe
