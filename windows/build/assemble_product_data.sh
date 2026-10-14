@@ -5,6 +5,7 @@
 #   dlssnr-amd/shaders/               the network (windows/build/arch/rdna4.sh)
 #   dlssnr-amd/shaders/runtime/       the passes around it
 #   dlssnr-amd/shaders/temporal/      the temporal variants and motion estimator
+#   dlssnr-amd/shaders/renodx/        the RenoDX-style option's shaders (RenoDX's own, MIT)
 #
 #   assemble_product_data.sh <parent dir> [--model dlssnr.bin]
 set -euo pipefail
@@ -22,6 +23,8 @@ for f in accumulation.txt swin-bias-storage.txt coherent-act.txt shader-constant
 done
 cp -- "$NR_PRODUCT_SPV"/runtime/* "$dst/shaders/runtime/"
 cp -- "$NR_PRODUCT_SPV"/temporal/* "$dst/shaders/temporal/"
+bash windows/build/build_renodx.sh "$dst/shaders/renodx" > /dev/null   # the RenoDX-style option
+cp -- windows/shaders/renodx/LICENSE "$dst/shaders/renodx/RenoDX-LICENSE.txt"
 
 # The weights are NVIDIA's and are never part of this repository: --model takes a dlssnr.bin made
 # from your own nvngx_dlssnr.dll by linux/package/model-tools/extract_model.sh.

@@ -63,14 +63,16 @@ if [[ ! -x toolchain/slang-2026.19/bin/slangc ]]; then
 fi
 
 # ---- sources ----------------------------------------------------------------------------------
-# Dear ImGui (MIT) as OptiScaler-NR's source tree carries it, for NR Control (the OptiScaler route's NR menu, a
-# Linux Vulkan layer): the files it compiles, checked, into toolchain/imgui-nr, with this project's imconfig.h.
+# Dear ImGui (MIT) as OptiScaler-NR's source tree carries it, for NR Control (the OptiScaler route's NR menu: a
+# Linux Vulkan layer, and on Windows drawn by the core DLL with the D3D11 / D3D12 backends): the files it compiles,
+# checked, into toolchain/imgui-nr, with this project's imconfig.h.
 repo artifacts/ref/OptiScaler-NR-src https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass.git \
      f45ccf3a761df91450959d325ac0166cba5364c9                                      # v0.8.91 source
-if [[ ! -f toolchain/imgui-nr/imconfig.h ]]; then
+if [[ ! -f toolchain/imgui-nr/imgui_impl_dx12.cpp ]]; then
     mkdir -p toolchain/imgui-nr
     for f in LICENSE.txt imgui.cpp imgui.h imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp imgui_internal.h \
-             imgui_impl_vulkan.cpp imgui_impl_vulkan.h imstb_rectpack.h imstb_textedit.h imstb_truetype.h; do
+             imgui_impl_vulkan.cpp imgui_impl_vulkan.h imgui_impl_dx11.cpp imgui_impl_dx11.h imgui_impl_dx12.cpp \
+             imgui_impl_dx12.h imstb_rectpack.h imstb_textedit.h imstb_truetype.h; do
         cp -- "artifacts/ref/OptiScaler-NR-src/OptiScaler/include/imgui/$f" toolchain/imgui-nr/
     done
     printf '#pragma once\n// Project configuration. Standard stb fonts; no reference-project FreeType hooks.\n' \
@@ -86,6 +88,10 @@ e4ac34e7bc9ef6509e41a1124dcdb460b995b7b56b64681ce924f384518b33e2  imgui_widgets.
 7ea0356920f6a8f9b7d85eeead141ad9eadac4f87fdde125262a1b29c8c59aa2  imgui_internal.h
 c33a3f98fd7963e5508303f480a6d761198c8d22ad0609f4d23e0e3ff2af9e06  imgui_impl_vulkan.cpp
 4723ad0de0d2dc23e6e44871ff5370d3e239e59dc7d2f20d69cae8c33e5266f5  imgui_impl_vulkan.h
+63d2e5d0a358a40ded05e2e7d0a8d9c3b7e5eb7a34d352d90dbf3a9e549dc34a  imgui_impl_dx11.cpp
+7c40511ddcebd12be1acad7752cb9873a7c621bb5a6b9c58be37500a86f4b7d2  imgui_impl_dx11.h
+d4a6f8a59c3c3cc30b7bd05ca58b09f4cd612540980ba7b9e7309920e7aabb41  imgui_impl_dx12.cpp
+c74ce2daf4901229511131d06e4d1d2d9f0b22a487e0987ec11a98510e62ef68  imgui_impl_dx12.h
 2efa3d5f7d003c19743b15155dad9f46d9f9fc783a18893d703b431d3c990972  imstb_rectpack.h
 10777411bf758908aadaf7d73d4710d6ba0464f332f0015db9d1444c19456e6a  imstb_textedit.h
 87f08919ae8e7223451d0e9d06b62829075d3e920c9e6ad436db9d7e7427ffce  imstb_truetype.h

@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Build the Windows package (64-bit games on the AMD Windows driver):
 #   dlssnr-amd/     the network: Windows shaders (windows/build/assemble_product_data.sh), and in aco/ the
-#                   same network as ACO's machine code ([Network] ACO Mode = 1)
-#   model-tools/    dlssnr_extract_model.exe: install.ps1 makes the model from the user's nvngx_dlssnr.dll
+#                   same network as ACO's machine code ([Network] ACO Mode = 1); int4 mixed's data in int4/
+#   model-tools/    dlssnr_extract_model.exe: install.ps1 makes the model from the user's nvngx_dlssnr.dll;
+#                   dlssnr-int4-weights.exe: and int4 mixed's weights from the model
 #   optiscaler/     the OptiScaler-NR release, extracted, plus our NGX DLLs
 #   reshade/        ReShade + our add-on: dxgi.dll in DX10/11/12 games, a Vulkan layer otherwise
 #   dxvk/           D3D9 -> Vulkan, for the DX9 route only
 #   vulkan/         the Khronos loader the Vulkan-layer routes put beside the game
 #   install.bat, install.ps1, README.txt
 #
-#   [NR_MODEL=dlssnr.bin] bash windows/build/build_package.sh [build dir]
+#   [NR_MODEL=dlssnr.bin] [NR_INT4=0] bash windows/build/build_package.sh [build dir]
 #
 # The package carries no model: install.ps1 extracts it from the user's nvngx_dlssnr.dll on the first
 # install. NR_MODEL puts a dlssnr.bin you made yourself into the package (for your own use only).
+#
+# NR_INT4 (default 1): the programs built with int4 mixed and its data in the package; install.ps1 asks which
+# network to install (ACO Mode, int4 mixed on or off; int4 mixed runs with ACO Mode = 1). NR_INT4=0: the default
+# network only.
 #
 # D3D10/11/12 games keep the system's own D3D: the network runs on a Vulkan device of its own and the
 # frame crosses over through shared textures and a shared fence (windows/src/pe/nr_pe_bridge.hpp).
@@ -49,8 +54,10 @@ stamp=$(bash windows/build/version.sh)
 python3 windows/build/generate_device_chain.py toolchain/Vulkan-Headers "$out/nr_device_chain_sizes.hpp"
 common=(-std=c++17 -O2 -DNDEBUG -DNR_BUILD_STAMP="\"$stamp\"" -Itoolchain/Vulkan-Headers/include -Iwindows/src
         -Iwindows/src/core -Iwindows/src/pe -I"$out")
+[[ "${NR_INT4:-1}" == 1 ]] && common+=(-DNR_INT4=1)
 "$cxx" "${common[@]}" "${NR_PRODUCT_DEFINES[@]}" -c windows/src/core/nr_runtime.cpp -o "$out/nr_runtime.o"
 "$cxx" "${common[@]}" -c windows/src/core/nr_native_plan.cpp -o "$out/nr_native_plan.o"
+"$cxx" "${common[@]}" -c windows/src/core/nr_renodx.cpp -o "$out/nr_renodx.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_log.cpp -o "$out/log.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_crash.cpp -o "$out/crash.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_interop.cpp -o "$out/interop.o"
@@ -59,9 +66,10 @@ common=(-std=c++17 -O2 -DNDEBUG -DNR_BUILD_STAMP="\"$stamp\"" -Itoolchain/Vulkan
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_bridge.cpp -o "$out/bridge.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_d3d12split.cpp -o "$out/d3d12split.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_config.cpp -o "$out/config.o"
+"$cxx" "${common[@]}" -c windows/src/pe/nr_screenshot.cpp -o "$out/screenshot.o"
 # ReShade's headers include <Windows.h>; the case shim maps that onto mingw's.
 "$cxx" "${common[@]}" -Iwindows/src/pe/reshade_compat -I"$reshade_inc" -I"$minhook/include" \
-    -Iartifacts/ref/DLSS5-Feeder/external/imgui -c windows/src/pe/nr_reshade_addon.cpp -o "$out/reshade_addon.o"
+    -Iartifacts/ref/DLSS5-Feeder/external/imgui -Iwindows/src/ui -c windows/src/pe/nr_reshade_addon.cpp -o "$out/reshade_addon.o"
 for unit in hook buffer trampoline; do
     "$cc" -O2 -I"$minhook/include" -I"$minhook/src" -c "$minhook/src/$unit.c" -o "$out/mh_$unit.o"
 done
@@ -71,8 +79,8 @@ ldflags=(-ld3d12 -ldxgi -ldwmapi -lgdi32 -lole32 -static -static-libgcc -static-
 # No static import of vulkan-1.dll (it would load before the game set up its graphics): every vk*
 # call goes through a pointer filled once Vulkan is in the process. The list is whatever a trial
 # link reports undefined.
-objs=("$out/reshade_addon.o" "$out/session.o" "$out/bridge.o" "$out/d3d12split.o" "$out/config.o" "$out/interop.o" "$out/log.o" "$out/crash.o"
-      "$out/vkdevice.o" "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out"/mh_*.o)
+objs=("$out/reshade_addon.o" "$out/session.o" "$out/bridge.o" "$out/d3d12split.o" "$out/config.o" "$out/screenshot.o" "$out/interop.o" "$out/log.o"
+      "$out/crash.o" "$out/vkdevice.o" "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o" "$out"/mh_*.o)
 undefined=$({ "$cxx" -shared -o /dev/null "${objs[@]}" "${ldflags[@]}" 2>&1 || true; } |
     grep -o "undefined reference to \`vk[A-Za-z0-9_]*'" | sed "s/.*\`//; s/'//" | sort -u)
 {
@@ -124,6 +132,45 @@ python3 linux/build/build_network.py rdna4 --out "$out/aco-shaders" > /dev/null
 cp -r -- "$out/aco-shaders" "$aco/shaders"
 cp -- windows/data/aco/records/*.nrp "$aco/records/"
 cp -- windows/data/aco/shell-aliases.txt "$aco/"
+if [[ "${NR_INT4:-1}" == 1 ]]; then
+    # int4 mixed as ACO's machine code (windows/data/aco/int4/records) and the Linux int4 network the records were
+    # made from (linux/build/build_network.py --int4)
+    rm -rf -- "$out/aco-shaders-int4"
+    python3 linux/build/build_network.py rdna4 --int4 --out "$out/aco-shaders-int4" > /dev/null
+    mkdir -p -- "$aco/int4/records"
+    cp -r -- "$out/aco-shaders-int4" "$aco/int4/shaders"
+    cp -- windows/data/aco/int4/records/*.nrp "$aco/int4/records/"
+    cp -- windows/data/aco/int4/shell-aliases.txt "$aco/int4/"
+    # INT4 adds kernels whose PAL template is one of the native default shaders.
+    python3 - "$aco" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1]); aliases = {}
+for file in [root / 'shell-aliases.txt', root / 'int4/shell-aliases.txt']:
+    for line in file.read_text().splitlines():
+        if not line.strip(): continue
+        name, shell = line.split()
+        if name in aliases and aliases[name] != shell:
+            raise SystemExit('conflicting ACO template alias: ' + name)
+        aliases[name] = shell
+(root / 'shell-aliases.txt').write_text(''.join(f'{a} {b}\n' for a, b in sorted(aliases.items())))
+PY
+    # dlssnr-amd/int4/: the int4 data (one copy for both platforms, linux/data/int4/rdna4) and the SPIR-V the ACO
+    # records belong to
+    mkdir -p -- "$pkg/dlssnr-amd/int4"
+    cp -r -- linux/data/int4/rdna4/{vit,swin,settings.txt} "$pkg/dlssnr-amd/int4/"
+    cp -r -- "$out/aco-shaders-int4" "$pkg/dlssnr-amd/int4/shaders"
+    "$cxx" "${common[@]}" "${NR_PRODUCT_DEFINES[@]}" -c windows/src/tools/nr_int4_weights.cpp -o "$out/int4_weights.o"
+    # The generator stops before device creation. Vulkan calls abort if this contract is broken.
+    syms=$({ "$cxx" -static -o /dev/null "$out/int4_weights.o" "$out/nr_native_plan.o" 2>&1 || true; } |
+           grep -o "undefined reference to .vk[A-Za-z0-9_]*" | sed "s/.*to .//" | sort -u)
+    { echo '#include <stdlib.h>'; for s in $syms; do echo "void $s(void) { abort(); }"; done; } > "$out/int4_vkstub.c"
+    "$cc" -O2 -c "$out/int4_vkstub.c" -o "$out/int4_vkstub.o"
+    "$cxx" -static -o "$out/dlssnr-int4-weights.exe" "$out/int4_weights.o" "$out/nr_native_plan.o" "$out/int4_vkstub.o"
+    mkdir -p -- "$pkg/model-tools"
+    cp -- "$out/dlssnr-int4-weights.exe" "$pkg/model-tools/"
+    cp -- linux/data/int4/rdna4/dlssnr-int4.sha256 "$pkg/model-tools/dlssnr-int4.sha256"
+fi
 # model-tools/: the extractor install.ps1 runs when the package has no model.
 bash windows/package/model-tools/build_extract_model.sh "$out/extract" > /dev/null
 mkdir -p -- "$pkg/model-tools"
@@ -206,11 +253,21 @@ python3 linux/package/optiscaler/extract_release.py "$opti_zip" "$op/game" > /de
 # Streamline for NVIDIA's own core, and ours offers no DLSS (linux/build/build_package.sh).
 cp -- artifacts/windows/optiscaler/{nvngx.dll_dlssnr.dll,nvngx_dlssnr.dll} "$op/"
 cp -- artifacts/windows/optiscaler/_nvngx.dll "$op/dlssnr_core.dll"
+# NR Control's swap-chain probe (windows/src/pe/nr_present_probe.cpp), run by the core from dlssnr-amd\
+cp -- artifacts/windows/optiscaler/nr_present_probe.exe "$pkg/dlssnr-amd/"
 
 # dlssnr-amd.ini, put in place at install: the text the programs write themselves (windows/package/make_ini.py),
 # with the line ends a Windows program writes.
-python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini" > /dev/null
-sed -i 's/$/\r/' "$pkg/ini/"*.ini
+# One set per network choice of install.ps1 (ini/<choice>/).
+if [[ "${NR_INT4:-1}" == 1 ]]; then
+    python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini/default" --int4-off > /dev/null
+    python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini/aco" --int4-off --aco > /dev/null
+    python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini/aco-int4-mixed" --int4 --aco > /dev/null
+else
+    python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini/default" > /dev/null
+    python3 windows/package/make_ini.py windows/src/pe/nr_pe_config.cpp "$pkg/ini/aco" --aco > /dev/null
+fi
+sed -i 's/$/\r/' "$pkg/ini/"*/*.ini
 
 cp -- windows/package/install.bat windows/package/README.txt "$pkg/"
 # Windows PowerShell 5.1 reads a script without a byte-order mark in the ANSI code page.

@@ -26,6 +26,10 @@
 #include "nr_pe_config.hpp"
 #include "nr_pe_interop.hpp"
 #include "nr_pe_log.hpp"
+#include "nr_pe_renodx_route.hpp"
+#include "nr_pe_control.hpp"
+#include "nr_pe_menu.hpp"
+#include "nr_screenshot.hpp"
 #include "nr_pe_session.hpp"
 #include "nr_pe_vkdevice.hpp"
 
@@ -121,6 +125,87 @@ nr::Preprocess preprocess_now() {
         if (*folder) file.poll(std::string(folder) + "\\dlssnr-amd.ini", config);
     }
     return toggle.frame(config);
+}
+
+// [RenoDX] beside this module, re-read when it changes (at most once a second). Only the OptiScaler route's
+// RenoDX-style option reads it, and only when its hook went in at load (nr_pe_renodx_route.hpp).
+nr::pe::RenoDXConfig renodx_now() {
+    static nr::pe::RenoDXFile file;
+    static nr::pe::RenoDXConfig config;
+    const char* folder = nr::pe::module_folder();
+    if (*folder && file.poll(std::string(folder) + "\\dlssnr-amd.ini", config))
+        nr::pe::log("[nr] RenoDX-style option: dlssnr-amd.ini [RenoDX] read (intensity %.2f, %u pass%s, look %s, hook point %u, "
+                    "colour %.2f, transfer %.2f, detail stability %u)",
+                    config.values.intensity, config.values.passes, config.values.passes == 1 ? "" : "es",
+                    config.values.look_mode ? "on" : "off", config.values.hook_point, config.values.color_strength,
+                    config.values.transfer_strength, config.values.detail_stability);
+    return config;
+}
+
+// This frame's [RenoDX] settings: the file's, NeuralUplift as NRToggleKey left it.
+nr::renodx::Settings renodx_frame_settings() {
+    static nr::pe::NrToggle toggle;
+    static nr::pe::KeyPress screenshot_key;
+    const nr::pe::RenoDXConfig cfg = renodx_now();
+    nr::renodx::Settings s = cfg.values;
+    s.nr_enabled = toggle.frame(cfg);
+    // RenoDX's NR screenshot: NRScreenshotKey (the menu's button comes through control.bin, nr_pe_control.cpp)
+    nr::pe::screenshot::configure({cfg.screenshot_source, cfg.screenshot_format, cfg.screenshot_layout,
+                                   cfg.screenshot_jpeg_quality, cfg.screenshot_max_mb});
+    if (screenshot_key.frame(cfg.screenshot_key)) nr::pe::screenshot::request();
+    nr::pe::screenshot::tick();
+    return s;
+}
+
+// OptiScaler's finished picture as a screenshot's final picture: the frames it is handed with NR moved there for the
+// capture (nr_pe_optifix.cpp). The first one may already carry this frame's inline NR, and RenoDX's temporal state
+// for it starts there: clean from the third finished picture in a row with no inline evaluate between them.
+void note_finished(nr::pe::Session::RenoDXFrame& rf, bool finished) {
+    static uint32_t in_a_row = 0;
+    rf.finished = finished;
+    if (!finished) { in_a_row = 0; rf.clean = true; return; }
+    rf.clean = ++in_a_row >= 3;
+}
+
+// NR Control's status line (nr_pe_control.hpp): this evaluate's cost, sizes and network. `rs`: the RenoDX-style
+// option's settings when it ran the frame. OptiScaler's own passes are one feature each (`live`).
+void report_control(nr::pe::Session& session, const Feature* f, uint32_t route, unsigned int w, unsigned int h,
+                    const nr::renodx::Settings* rs, size_t live, uint32_t render_w = 0, uint32_t render_h = 0) {
+    nr::pe::control::Status st;
+    st.route = route;
+    st.renodx = rs != nullptr;
+    st.nr_on = rs ? rs->nr_enabled : true;
+    st.preprocess = f->controls.preprocess.active();
+    st.building = session.building();
+    st.gpu_ms = session.gpu_ms();
+    st.network_ms = session.network_ms();
+    st.width = w; st.height = h;
+    st.render_width = render_w; st.render_height = render_h;
+    // OptiScaler's own word on where this NR pass runs (known while its State::Run is hooked: the RenoDX-style option)
+    const auto frame = nr::pe::renodx_route::current_frame();
+    st.placement = frame.known ? (frame.before_upscale ? 2u : 1u) : 0u;
+    // The game's own sizes for its DLSS evaluate where OptiScaler's pass was seen (what OptiScaler's menu shows); else
+    // the depth guide's extent.
+    if (frame.known && frame.render_width && frame.render_height) {
+        st.render_width = frame.render_width; st.render_height = frame.render_height;
+    }
+    if (frame.known) { st.output_width = frame.output_width; st.output_height = frame.output_height; }
+    session.network_size(&st.nr_width, &st.nr_height);
+    st.passes = rs ? nr::renodx::stack_passes(*rs) : uint32_t(std::max<size_t>(live, 1));
+    const int int4 = session.state().running_int4;
+    st.int4 = int4 < 0 ? 2 : int4;
+    nr::pe::control::report(st);
+}
+
+// The RenoDX-style option takes the frame at its own size (nr_pe_renodx_route.hpp): a network input smaller than
+// OptiScaler's encode means its Model resolution or Peripheral compression is on, said once.
+void note_renodx_extent(const nr::pe::renodx_route::Encode& encode, unsigned int width, unsigned int height) {
+    static bool noted = false;
+    if (noted || !encode.width || !encode.height || (width >= encode.width && height >= encode.height)) return;
+    noted = true;
+    nr::pe::log("[nr] RenoDX-style option: the network gets %ux%u of a %ux%u frame; OptiScaler's Model resolution "
+                "should stay at 100%% and Peripheral compression off (the result is enlarged as it is); [RenoDX] "
+                "NRResolutionScale sets the network's size", width, height, encode.width, encode.height);
 }
 
 // Multi-pass, and why nothing here has to be given up for it.
@@ -409,8 +494,15 @@ DebugDepth debug_depth() {
     return k;
 }
 
-// Live D3D12 features in creation order, for the pass number above only.
-std::vector<Feature*> g_live_d3d12;
+// Live D3D12 / Vulkan features in creation order, for the pass number (OptiScaler makes one feature per model
+// pass, in order).
+std::vector<Feature*> g_live_d3d12, g_live_vk;
+int pass_number_of(const std::vector<Feature*>& live, const Feature* f) {
+    int n = 1;
+    for (const Feature* o : live)
+        if (o->id < f->id) ++n;
+    return n;
+}
 
 // Bytes per pixel of the formats a DLSS-NR output is ever seen in; 0 is "this tool cannot read it".
 // R8G8B8A8_TYPELESS and _UNORM_SRGB decode byte-identically to _UNORM (the numbers are then in the
@@ -962,6 +1054,7 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
         g_last_error = "the command list belongs to no D3D12 device";
         return 0;
     }
+    nr::pe::menu::install();   // NR Control (End), once per process
 
     // NR_DEBUG_READBACK=1: which evaluate this is, and the pair the previous one recorded.
     //
@@ -1015,6 +1108,12 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
     // (DlssNr_Guides.h ResolveGuideRegions, lowResolutionMotion). Base and extent are both honoured,
     // as NVIDIA's DLL does: nr_pe_session.cpp apply_guide_subrect.
     resources.depth_subrect = to_session(depth_rect);
+    // The game's render extent for NR Control (OptiScaler gives the depth guide the render extent).
+    uint32_t render_w = resources.depth_subrect.width, render_h = resources.depth_subrect.height;
+    if ((!render_w || !render_h) && depth) {
+        const D3D12_RESOURCE_DESC dd = depth->GetDesc();
+        render_w = uint32_t(dd.Width); render_h = dd.Height;
+    }
     resources.motion_subrect = to_session(motion_rect);
     resources.depth_inverted = (depth_inverted != 0) != (debug_depth() == DebugDepth::Flip);
     // The caller's flag and nothing else: every feature has its own history now.
@@ -1052,9 +1151,7 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
 
     auto& session = d3d12_session();
     // NR_DEBUG_SKIP_PASS: this feature's pass number is its rank among the live features.
-    int pass_number = 1;
-    for (const Feature* o : g_live_d3d12)
-        if (o->id < f->id) ++pass_number;
+    const int pass_number = pass_number_of(g_live_d3d12, f);
     const bool skipped = debug_skip_pass() > 0 && pass_number == debug_skip_pass();
     // The network reads the colour and writes the output (no seed copy; its post block stores
     // into the output when it can). Where it cannot - still building, a failure, a format or
@@ -1062,6 +1159,51 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
     // as before. NR_SEED_COPY=1 keeps the old order for comparisons.
     static const bool seed_always = [] { const char* e = std::getenv("NR_SEED_COPY"); return e && std::atoi(e); }();
     bool ran = false;
+    // The RenoDX-style option: OptiScaler has handed the frame over as it is (its hook), so the model runs
+    // RenoDX's processing around the network, or - while it cannot - copies the frame over, which OptiScaler
+    // then outputs unchanged. It never runs the network on the raw frame.
+    if (nr::pe::renodx_route::installed()) {
+        const auto encode = nr::pe::renodx_route::last_encode();
+        note_renodx_extent(encode, width, height);
+        const auto frame = nr::pe::renodx_route::current_frame();
+        nr::pe::Session::RenoDXFrame rf;
+        rf.hdr_flag = encode.hdr;
+        rf.settings = renodx_frame_settings();
+        rf.preprocess = f->controls.preprocess;
+        note_finished(rf, frame.known && frame.finished_picture);
+        if (frame.known) {
+            // OptiScaler's own frame: NR before or after the upscaler, and the game's exposure as DLSS got it.
+            rf.after_upscale = !frame.before_upscale;
+            rf.exposure = static_cast<ID3D12Resource*>(frame.exposure);
+            rf.exposure_state = static_cast<D3D12_RESOURCE_STATES>(frame.exposure_state);
+            rf.pre_exposure = frame.pre_exposure > 0.0f ? frame.pre_exposure : 1.0f;
+            rf.exposure_scale = frame.exposure_scale;
+            rf.auto_exposure = frame.flags_known && (frame.create_flags & 0x40u) != 0;   // AutoExposure
+            rf.create_flags_known = frame.flags_known;
+        } else {
+            rf.create_flags_known = false;
+        }
+        // OptiScaler's encode skipped (nr_pe_optifix.cpp): the frame itself is read and written, in the state
+        // OptiScaler holds it in across the call, and left as it is when NR does not run (its resolve is skipped too).
+        auto* direct = static_cast<ID3D12Resource*>(nr::pe::renodx_route::direct());
+        if (direct) {
+            color = output = direct;
+            if (!skipped && encode.count)
+                ran = session.run_renodx(device, cmd, direct, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, resources,
+                                         f->controls, direct, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, rf);
+        } else {
+            if (!skipped && encode.count)
+                ran = session.run_renodx(device, cmd, output, kOutputState, resources, f->controls, color, kColorState, rf);
+            if (!ran) seed();
+        }
+        log_evaluate(f, "D3D12", width, height, static_cast<const void*>(color), static_cast<const void*>(output),
+                     resources.reset, ran, ran ? nullptr : session.failed() ? "failed" : session.building() ? "building"
+                     : "declined", session.gpu_ms(), session.network_ms());
+        report_control(session, f, 1, width, height, &rf.settings, g_live_d3d12.size(), render_w, render_h);
+        device->Release();
+        if (!ran && session.failed()) return static_cast<int>(NVSDK_NGX_Result_FAIL_UnableToInitializeFeature);
+        return static_cast<int>(NVSDK_NGX_Result_Success);
+    }
     if (!skipped && !seed_always) {
         // the seed copy's D3D12 transitions were also what made vkd3d-proton
         // flush transfer work it batches on the CPU (a caller's CopyTextureRegion into the colour)
@@ -1102,6 +1244,7 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
                       : session.building() ? "building" : "declined";
     log_evaluate(f, "D3D12", width, height, static_cast<const void*>(color),
                  static_cast<const void*>(output), resources.reset, ran, why, session.gpu_ms(), session.network_ms());
+    report_control(session, f, 1, width, height, nullptr, g_live_d3d12.size(), render_w, render_h);
     if (readback && f->debug) readback_log(f, *f->debug);
     // The Vulkan identities behind the D3D12 pointers, for the multipass question: does pass k's
     // colour really alias the buffer pass k-1 wrote, or the untouched model input? Same rate limit.
@@ -1214,6 +1357,7 @@ Feature* create_vk(void* cmd_buffer, void* params, unsigned int width, unsigned 
     feature->ui_correction = ui_correction;
     feature->controls = controls_from(controls);
     feature->id = vk_session().create_feature();
+    g_live_vk.push_back(feature);
 
     write_create_keys(params, width, height, preset, ui_correction, controls);
 
@@ -1277,12 +1421,16 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
         }
     }
 
+    // The guides are NGX inputs: sampled, and this path already copies from them (NVSDK_NGX_Resource_VK
+    // carries no usage). Sampled motion vectors are read in place by the network, as the DLL reads them.
     if (image_of(motion, &frame.motion, &frame.motion_format, &frame.motion_width,
                  &frame.motion_height)) {
         frame.motion_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        frame.motion_usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
     if (image_of(depth, &frame.depth, &frame.depth_format, &frame.depth_width, &frame.depth_height)) {
         frame.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        frame.depth_usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
 
     frame.motion_subrect = to_session(motion_rect);
@@ -1302,7 +1450,30 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
     write_evaluate_keys(params, controls, frame.reset, depth_inverted);
 
     auto& session = vk_session();
-    VkImage answer = session.run_vulkan(g_vk_handles, cmd, frame, f->controls);
+    // The RenoDX-style option (nr_pe_renodx_route.hpp): OptiScaler hands the frame over as it is; RenoDX's
+    // processing runs around the network, or the frame is copied over unchanged. The network never runs raw.
+    nr::pe::Session::RenoDXFrame rf;
+    if (nr::pe::renodx_route::installed()) {
+        const auto encode = nr::pe::renodx_route::last_encode();
+        note_renodx_extent(encode, frame.width, frame.height);
+        const auto info = nr::pe::renodx_route::current_frame();
+        rf.hdr_flag = encode.hdr;
+        rf.settings = renodx_frame_settings();
+        rf.preprocess = f->controls.preprocess;
+        rf.create_flags_known = false;   // the Vulkan path does not see the game's create flags
+        note_finished(rf, info.known && info.finished_picture);
+        if (info.known) {
+            rf.after_upscale = !info.before_upscale;
+            rf.pre_exposure = info.pre_exposure > 0.0f ? info.pre_exposure : 1.0f;
+            rf.vk_exposure = (VkImage)(uintptr_t)info.vk_exposure;
+            rf.vk_exposure_format = VkFormat(info.vk_exposure_format);
+            rf.vk_exposure_width = info.vk_exposure_width;
+            rf.vk_exposure_height = info.vk_exposure_height;
+        }
+        frame.renodx = encode.count ? &rf : nullptr;
+    }
+    VkImage answer = frame.renodx || !nr::pe::renodx_route::installed()
+                         ? session.run_vulkan(g_vk_handles, cmd, frame, f->controls) : VK_NULL_HANDLE;
 
     const bool ran = answer != VK_NULL_HANDLE;
     if (ran && answer == out_image) {
@@ -1313,8 +1484,10 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
         // blends output against the same proxy, so an identical copy composites to exactly the proxy.
         copy_into_output(cmd, frame.colour, frame.colour_layout, out_image, frame.width, frame.height);
     } else {
-        // Session::run_vulkan leaves its own output in VK_IMAGE_LAYOUT_GENERAL.
-        copy_into_output(cmd, answer, VK_IMAGE_LAYOUT_GENERAL, out_image, frame.width, frame.height);
+        // Session::run_vulkan leaves its own output in VK_IMAGE_LAYOUT_GENERAL (the RenoDX-style option without an
+        // output twin writes the colour itself, in its layout).
+        copy_into_output(cmd, answer, answer == frame.colour ? frame.colour_layout : VK_IMAGE_LAYOUT_GENERAL, out_image,
+                         frame.width, frame.height);
     }
     // As the D3D12 path: building is not failing, and a frame that carries the input unchanged is a
     // complete frame. See the note there.
@@ -1325,6 +1498,9 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
     // uint64_t on i686, and static_cast is legal for only one of them.
     log_evaluate(f, "Vulkan", frame.width, frame.height, (const void*)(uintptr_t)(frame.colour),
                  (const void*)(uintptr_t)(out_image), frame.reset, ran, why, session.gpu_ms(), session.network_ms());
+    report_control(session, f, 2, frame.width, frame.height, frame.renodx ? &rf.settings : nullptr, g_live_vk.size(),
+                   frame.depth_subrect.width ? frame.depth_subrect.width : frame.depth_width,
+                   frame.depth_subrect.height ? frame.depth_subrect.height : frame.depth_height);
     if (!ran && !session.status().empty()) {
         g_last_error = session.status();
         static std::string reported;
@@ -1341,6 +1517,7 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
 void release_vk(Feature* f) {
     std::lock_guard<std::mutex> guard(g_lock);
     if (f && g_vk_session) g_vk_session->release_feature(f->id);
+    g_live_vk.erase(std::remove(g_live_vk.begin(), g_live_vk.end(), f), g_live_vk.end());
     delete f;
     // The session outlives the feature on purpose; see the comment on g_vk_session.
 }

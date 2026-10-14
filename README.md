@@ -21,7 +21,9 @@ graphics cards.
   slower than on Linux. With [ACO Mode](#windows-experimental-preview) it loads machine code that was
   made in advance with Mesa's ACO compiler (the Linux driver's compiler) and ships in the package, and
   comes close to Linux (see [Performance](#performance)). ACO Mode has been tested on one driver version only (AMD Software
-  26.9.2); see [Windows](#windows-experimental-preview).
+  26.9.2); see [Windows](#windows-experimental-preview). Since 0.0.5-win-preview it has
+  [int4 mixed](#int4-mixed-optional), the [RenoDX style](#renodx-style-optional) and
+  [NR Control](#nr-control-optiscaler-route) as well.
 
 This is an independent project. It is not affiliated with, endorsed by or supported by NVIDIA or
 AMD. DLSS is a trademark of NVIDIA Corporation.
@@ -30,7 +32,7 @@ AMD. DLSS is a trademark of NVIDIA Corporation.
 
 This is an early project (version 0.0.x) and its testing is limited:
 
-- one graphics card, one Linux desktop, Mesa 26.2 and GE-Proton 11-7;
+- one graphics card, one Linux desktop, Mesa 26.2 and GE-Proton;
 - a small number of games, at a few resolutions and settings;
 
 Other cards, drivers, Proton versions, distributions and games have not been tested. Expect problems:
@@ -56,7 +58,7 @@ these logs:
 
 | Platform | Needs | State |
 | --- | --- | --- |
-| **Linux** (Steam / Proton) | Mesa 26.2 or newer, GE-Proton 11-7 (tested) | The main version, used in games. |
+| **Linux** (Steam / Proton) | Mesa 26.2 or newer, a recent Proton | The main version, used in games. |
 | **Windows** | AMD Software 26.9.2 (tested) | **Experimental preview, not tested much.** Slower than Linux by default, close to it with ACO Mode; game crashes, driver resets and other problems can happen. |
 
 Both need an RX 9000 series (RDNA4) card; older cards (RX 7000 and earlier) lack the FP8 matrix
@@ -71,9 +73,11 @@ AMD Software 26.9.2):
 | | 1080p | 1440p | 4K |
 | --- | --- | --- | --- |
 | Linux | 5.60 ms | 9.70 ms | 21.89 ms |
-| Linux, [int4 mixed](#int4-mixed-optional-linux) | 4.99 ms | 8.69 ms | 19.64 ms |
+| Linux, [int4 mixed](#int4-mixed-optional) | 4.99 ms | 8.69 ms | 19.64 ms |
 | Windows | 7.21 ms | 12.59 ms | 27.32 ms |
 | Windows, [ACO Mode](#windows-experimental-preview) On | 5.70 ms | 9.96 ms | 22.49 ms |
+
+Windows with ACO Mode On and int4 mixed runs at about the same speed as Linux with int4 mixed.
 
 In game (Linux, RX 9070 XT):
 
@@ -101,34 +105,37 @@ None of these measurements use frame generation; the OptiScaler route can turn i
 
 ## Supported games
 
-| Game uses | Linux | Windows |
-| --- | --- | --- |
-| **DirectX 12** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade-feeder` | OptiScaler or ReShade |
-| **DirectX 11** | `optiscaler` if the game has DLSS/FSR/XeSS, otherwise `reshade-feeder` | OptiScaler or ReShade |
-| **DirectX 10** | `reshade-feeder` | ReShade |
-| **DirectX 9** | `reshade-feeder-dx9` | ReShade (DX9) |
-| **Vulkan** | `reshade-feeder-vulkan` | ReShade |
-| OpenGL | not supported | not supported |
+Linux and Windows have the same routes:
+
+| Game uses | Route |
+| --- | --- |
+| **DirectX 12 / 11** | `optiscaler` if the game has a DLSS, FSR or XeSS option, otherwise `reshade-feeder` |
+| **DirectX 10** | `reshade-feeder` |
+| **DirectX 9** | `reshade-feeder-dx9` |
+| **Vulkan** | `reshade-feeder-vulkan` |
+| OpenGL | not supported |
 
 - **`optiscaler`**: for games with a DLSS, FSR or XeSS option. Uses
   [OptiScaler-NR](https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass) with this project as its
   DLSS-NR backend, and the game's own motion vectors. 64-bit games only.
 - **`reshade-feeder`**: for other DirectX 10/11/12 games. Runs through ReShade; motion is estimated from
   the picture by a ReShade shader.
-- **`reshade-feeder-vulkan` / `reshade-feeder-dx9`**: for Vulkan and DirectX 9 games. On Linux, DirectX 9
-  games run on Vulkan through DXVK, and ReShade is loaded as a Vulkan layer underneath it.
+- **`reshade-feeder-vulkan` / `reshade-feeder-dx9`**: for Vulkan and DirectX 9 games. DirectX 9 games
+  run on Vulkan through DXVK, and ReShade is loaded as a Vulkan layer underneath it.
   `reshade-feeder-dx9` also sets the depth direction old DirectX 9 games use.
 
-On Linux these routes were called `reshade`, `vulkan` and `dx9` up to 0.0.4. Any route can also use the
-[RenoDX style](#renodx-style-optional).
+These routes were called `reshade`, `vulkan` and `dx9` up to 0.0.4 on Linux and up to 0.0.4-win-preview
+on Windows. Any route can also use the [RenoDX style](#renodx-style-optional).
 
 32-bit games work on Linux (use the i686 package; not with `optiscaler`). The Windows version is
 64-bit only.
 
 ## NR Control (OptiScaler route)
 
-On the OptiScaler route, End opens NR Control, this project's own NR menu (a Vulkan layer in the game
-folder; the installer's launch options name it). It always has the int4 mixed and Preprocess switches.
+On the OptiScaler route, End opens NR Control, this project's own NR menu. On Linux it is a Vulkan layer
+in the game folder (the installer's launch options name it); on Windows the NR DLL draws it over the
+game's DirectX 11 or 12 swap chain, with nothing to set up. It always has the int4 mixed and Preprocess
+switches.
 Where the other NR settings are:
 
 - RenoDX style on: also in NR Control - Intensity, Style, Local tone, Local structure, Skin structure,
@@ -138,15 +145,17 @@ Where the other NR settings are:
 - RenoDX style off: on the DLSS Neural Rendering page of the OptiScaler menu (Insert), as before.
 
 It also shows what NR is doing (frame and network sizes, passes, NR's cost split into the network and
-the rest of the processing). It works on X11 (XWayland) and Wayland (`PROTON_ENABLE_WAYLAND=1`). While
-closed it draws nothing and submits no GPU work.
+the rest of the processing). On Linux it works on X11 (XWayland) and Wayland (`PROTON_ENABLE_WAYLAND=1`).
+On Windows it is drawn in the swap chain's encoding (SDR, scRGB or HDR10). While closed it draws nothing
+and submits no GPU work.
 
 ## RenoDX style (optional)
 
-An install option (`--renodx`, or `[RenoDX] Enabled = 1` in `dlssnr-amd.ini`, applied after a game
-restart): the processing around NR - how the picture is handed to the network and how its result is
-put back - follows [RenoDX's DLSS5 add-on](https://github.com/PEQHUB/RenoDX-DLSS5-Generic) v8.5.0-rc10,
-with RenoDX's own shaders. The NR network itself is the same.
+An install option (`--renodx` on Linux, a question or `-RenoDX on` in the Windows installer, or
+`[RenoDX] Enabled = 1` in `dlssnr-amd.ini`, applied after a game restart): the processing around NR -
+how the picture is handed to the network and how its result is put back - follows
+[RenoDX's DLSS5 add-on](https://github.com/PEQHUB/RenoDX-DLSS5-Generic) v8.5.0-rc10, with RenoDX's own
+shaders. The NR network itself is the same.
 
 - Every NR setting is then in `[RenoDX]`, with RenoDX's names, defaults and ranges: in NR Control on the
   OptiScaler route (OptiScaler's own menu then only drives upscaling and frame generation), on the
@@ -191,11 +200,16 @@ look; it may be better or worse.
 The first time the preprocess is turned on, NR rebuilds; a second or two of frames go without NR.
 The file itself explains every setting.
 
-## int4 mixed (optional, Linux)
+## int4 mixed (optional)
 
 A second network, faster than the default one (see Performance): part of its computation runs in int4,
 a lower precision than the original network uses, so its picture differs somewhat from the default
-network's. Both Linux packages have it; it is chosen at install.
+network's. Both Linux packages and the Windows package have it; it is chosen at install.
+
+On Windows it is choice 3 of the installer's network question (`-Network aco-int4-mixed`) and runs with
+[ACO Mode](#windows-experimental-preview) only: the AMD driver's own compiler makes slow code for the
+int4 kernels, so this version does not offer int4 mixed without ACO Mode. The rest of this section is
+about Linux; the switching, the weights and their check work the same way on Windows.
 
 - The installer asks once (Enter = no), or pass `--int4` or `--no-int4`.
 - With it, the Steam launch options the installer prints have `VK_ADD_LAYER_PATH` and
@@ -238,7 +252,7 @@ bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_d
 ```
 
 The folder is the one holding the game's exe. The installer lists the routes, asks whether to add
-[int4 mixed](#int4-mixed-optional-linux) and whether to turn on the [RenoDX style](#renodx-style-optional),
+[int4 mixed](#int4-mixed-optional) and whether to turn on the [RenoDX style](#renodx-style-optional),
 extracts the model (below) and prints the Steam launch options to use. `--dll` is needed only for the first install:
 the extracted model is kept and reused for every later one. Needs `bash` and `python3`. See
 [linux/package/README.txt](linux/package/README.txt).
@@ -246,7 +260,9 @@ the extracted model is kept and reused for every later one. Needs `bash` and `py
 ## Install (Windows)
 
 Download `DLSSNR-AMD-Vulkan-Windows-*-preview-x86_64.zip` from the releases, unpack it and double-click
-`install.bat`. Pick the game's exe (the one that actually runs, not a launcher), then the route. The
+`install.bat`. Pick the game's exe (the one that actually runs, not a launcher), then the route, the
+network (the default network compiled by the AMD driver, the default network as ACO machine code, or
+[int4 mixed](#int4-mixed-optional)) and whether to use the [RenoDX style](#renodx-style-optional). The
 first install asks for `nvngx_dlssnr.dll` 310.8.0 or a zip that contains it and extracts the model
 (below); later installs from the same package do not ask again. Read
 [windows/package/README.txt](windows/package/README.txt) and [Windows](#windows-experimental-preview)
@@ -308,16 +324,20 @@ game restarts.
 **ACO Mode has been tested on one driver version only (AMD Software 26.9.2, RX 9070 XT). With other
 drivers it may fail: game crashes, wrong pictures or driver resets. If that happens, turn it off.**
 When ACO Mode cannot be used at all, NR runs as with it off and `dlssnr-amd.log` says why.
+[int4 mixed](#int4-mixed-optional) needs ACO Mode On.
 
 Known issues:
 
 - With ACO Mode off it is slower than the Linux version (see Performance).
 - The first time NR runs in a game, the network compiles for about a minute before it takes effect
-  (on Linux about 10-20 seconds); this happens once for each game. Until then the picture looks as
-  without NR, which does not mean the mod is not working: give it a minute.
+  (on Linux about 10-20 seconds, with ACO Mode On a few seconds); this happens once for each game.
+  Until then the picture looks as without NR, which does not mean the mod is not working: give it a
+  minute.
 - DirectX 9 games run entirely on DXVK, which changes their performance and behaviour; overlays such
   as Steam's may not show.
 - In DirectX 10 games the game's depth buffer is not passed to NR yet (not implemented).
+- NR Control has been tested over DirectX 12 swap chains only; the RenoDX style has not been tested in a
+  DirectX 10 game.
 - Games whose FSR runs in their own shaders never hand it to OptiScaler: pick the game's DLSS option
   instead, which OptiScaler offers.
 - The network pauses itself when video or system memory runs short.

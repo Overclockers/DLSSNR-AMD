@@ -1,7 +1,16 @@
 # DLSSNR-AMD Windows installer (run by install.bat)
 #
 #   install.bat                      a window asks for the game's exe, then for the route
-#   install.bat <game exe or its folder> [optiscaler|reshade|dx9|vulkan|remove|logs] [-Dll <nvngx_dlssnr.dll or its zip>]
+#   install.bat <game exe or its folder> [optiscaler|reshade-feeder|reshade-feeder-dx9|reshade-feeder-vulkan|remove|logs]
+#               [-Dll <nvngx_dlssnr.dll or its zip>] [-Network default|aco|aco-int4-mixed] [-RenoDX on|off]
+#
+# Network (chosen at install, written to [Network] ACO Mode and [Int4Mixed] Enabled in dlssnr-amd.ini): default = 0 / 0,
+# aco = 1 / 0, aco-int4-mixed = 1 / 1 (int4 mixed runs with ACO's machine code only). int4 mixed is always installed
+# (its weights are made at install); the choice can be changed in the ini later.
+#
+# RenoDX style (asked at install, -RenoDX on|off; [RenoDX] Enabled in dlssnr-amd.ini): the picture before and after NR
+# is processed the way RenoDX's DLSS5 add-on does it, and every NR setting moves to [RenoDX] (on the OptiScaler route in
+# the NR Control menu, on the ReShade routes on the Add-ons page).
 #
 # The package carries no model: on the first install the user gives NVIDIA's nvngx_dlssnr.dll (310.8.0)
 # or a zip that contains it, and model-tools\dlssnr_extract_model.exe makes dlssnr.bin from it (it only
@@ -10,7 +19,8 @@
 #
 # Every file put into the game folder is listed in dlssnr-amd-install.txt; existing files it would
 # overwrite are first moved to dlssnr-amd-backup\, and uninstall deletes ours and puts them back.
-param([string]$Target = '', [string]$Route = '', [string]$Dll = '', [switch]$Pause)
+param([string]$Target = '', [string]$Route = '', [string]$Dll = '', [string]$Network = '', [string]$RenoDX = '',
+      [switch]$Pause)
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -58,20 +68,69 @@ if (-not $Route) {
     Say ''
     Say "Game folder: $game"
     Say 'Choose a route:'
-    Say '  1) OptiScaler   the game has a DLSS, FSR or XeSS option (DX11 / DX12)'
-    Say '  2) ReShade      other DX10/11/12 games'
-    Say '  3) ReShade      old DX9 games'
-    Say '  4) ReShade      Vulkan games'
+    Say '  1) optiscaler             the game has a DLSS, FSR or XeSS option (DX11 / DX12, OptiScaler)'
+    Say '  2) reshade-feeder         other DX10/11/12 games (ReShade)'
+    Say '  3) reshade-feeder-dx9     old DX9 games (ReShade)'
+    Say '  4) reshade-feeder-vulkan  Vulkan games (ReShade)'
     Say '  5) Uninstall'
-    Say '  6) Collect logs when something goes wrong; the zip goes to the desktop'
+    Say '  6) Collect logs           when something goes wrong; the zip goes to the desktop'
     $pick = Read-Host '1-6'
     switch ($pick) {
-        '1' { $Route = 'optiscaler' } '2' { $Route = 'reshade' } '3' { $Route = 'dx9' } '4' { $Route = 'vulkan' }
-        '5' { $Route = 'remove' } '6' { $Route = 'logs' }
+        '1' { $Route = 'optiscaler' } '2' { $Route = 'reshade-feeder' } '3' { $Route = 'reshade-feeder-dx9' }
+        '4' { $Route = 'reshade-feeder-vulkan' } '5' { $Route = 'remove' } '6' { $Route = 'logs' }
         default { Fail 'Invalid choice.' }
     }
 }
-if ('optiscaler', 'reshade', 'dx9', 'vulkan', 'remove', 'logs' -notcontains $Route) { Fail "Unknown route: $Route" }
+# The old route names were renamed; optiscaler-renodx means optiscaler with -RenoDX on.
+$renamed = @{ 'reshade' = 'reshade-feeder'; 'dx9' = 'reshade-feeder-dx9'; 'vulkan' = 'reshade-feeder-vulkan' }
+if ($renamed.ContainsKey($Route)) { Fail "Unknown route: $Route (this route is now called $($renamed[$Route]))" }
+if ($Route -eq 'optiscaler-renodx') { $Route = 'optiscaler'; if (-not $RenoDX) { $RenoDX = 'on' } }
+if ('optiscaler', 'reshade-feeder', 'reshade-feeder-dx9', 'reshade-feeder-vulkan', 'remove', 'logs' -notcontains $Route) {
+    Fail "Unknown route: $Route"
+}
+
+# ---- choose the network ----------------------------------------------------------------------
+$haveInt4 = Test-Path -LiteralPath (Join-Path $here 'dlssnr-amd\int4') -PathType Container
+if ($Route -ne 'remove' -and $Route -ne 'logs' -and -not $Network) {
+    Say ''
+    Say 'Choose the network (both settings can be changed in dlssnr-amd.ini later):'
+    Say '  1) default network, compiled by the AMD driver   ACO Mode = 0, Int4Mixed Enabled = 0 (default)'
+    Say '  2) default network, ACO machine code             ACO Mode = 1, Int4Mixed Enabled = 0'
+    $menu = @('default', 'aco')
+    if ($haveInt4) {
+        Say '  3) int4 mixed, ACO machine code                  ACO Mode = 1, Int4Mixed Enabled = 1'
+        $menu += 'aco-int4-mixed'
+        Say 'int4 mixed: part of the network runs in int4 and other lower precisions; faster, the picture differs somewhat.'
+        Say 'It runs with ACO machine code only. Ctrl+F11 in game switches between int4 mixed and the default network.'
+    }
+    Say 'ACO machine code: the network as machine code made in advance by the Linux driver''s compiler (ACO), shipped in'
+    Say 'the package and loaded by the AMD driver as it is; faster than the AMD driver''s own compile. Tested on one driver'
+    Say 'version only (AMD Software 26.9.2); if it causes problems on another driver, set ACO Mode back to 0.'
+    $pick = Read-Host "1-$($menu.Count) (Enter = 1)"
+    if ($pick -eq '') { $pick = '1' }
+    $n = 0
+    if ([int]::TryParse($pick, [ref]$n) -and $n -ge 1 -and $n -le $menu.Count) { $Network = $menu[$n - 1] }
+    if (-not $Network) { Fail 'Invalid choice.' }
+}
+if (-not $Network) { $Network = 'default' }
+if ('default', 'aco', 'aco-int4-mixed' -notcontains $Network) { Fail "Unknown network: $Network" }
+if ($Network -eq 'aco-int4-mixed' -and -not $haveInt4) { Fail 'This package has no int4 mixed.' }
+
+# ---- RenoDX style ----------------------------------------------------------------------------
+if ($Route -ne 'remove' -and $Route -ne 'logs' -and -not $RenoDX) {
+    Say ''
+    Say 'RenoDX style (optional): the picture before and after NR is processed the way RenoDX''s DLSS5 add-on does it (the NR network itself is the same).'
+    if ($Route -eq 'optiscaler') {
+        Say '  y: turn it on. Every NR setting is in NR Control (End in game); the OptiScaler menu only handles upscaling and frame generation.'
+    } else {
+        Say '  y: turn it on. Every NR setting is on ReShade''s Add-ons page ([RenoDX] in dlssnr-amd.ini).'
+    }
+    Say '  N: leave it off, as before. To turn it on later, set [RenoDX] Enabled = 1 in dlssnr-amd.ini and restart the game.'
+    $pick = Read-Host 'Turn on the RenoDX style? [y/N]'
+    $RenoDX = if ($pick -eq 'y' -or $pick -eq 'Y') { 'on' } else { 'off' }
+}
+if (-not $RenoDX) { $RenoDX = 'off' }
+if ('on', 'off' -notcontains $RenoDX) { Fail "Unknown RenoDX choice: $RenoDX (on or off)" }
 
 # ---- games under Program Files need administrator rights -------------------------------------
 if ($Route -ne 'logs') {
@@ -81,7 +140,7 @@ if ($Route -ne 'logs') {
         $me = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
         if ($me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { Fail "Cannot write to $game" }
         Say 'This folder needs administrator rights, asking for them...'
-        $elevated = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`" -Target `"$game`" -Route $Route -Pause"
+        $elevated = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`" -Target `"$game`" -Route $Route -Network $Network -RenoDX $RenoDX -Pause"
         if ($Dll) { $elevated += " -Dll `"$Dll`"" }
         $p = Start-Process powershell -Verb RunAs -ArgumentList $elevated -PassThru -Wait
         exit $p.ExitCode
@@ -252,11 +311,34 @@ if (-not (Test-Path -LiteralPath $model)) {
 if ((Get-FileHash -LiteralPath $modelFrom -Algorithm SHA256).Hash -ne $ModelSha) {
     Fail "$modelFrom is damaged or not this version's model. Delete it and install again with nvngx_dlssnr.dll."
 }
+# int4 mixed's weights: made from this model with the package's data, checked against the tested result.
+$int4ModelFrom = $null
+$int4Data = Join-Path $here 'dlssnr-amd\int4'
+if ($haveInt4) {
+    $generator = Join-Path $here 'model-tools\dlssnr-int4-weights.exe'
+    $hashFile = Join-Path $here 'model-tools\dlssnr-int4.sha256'
+    if (-not (Test-Path -LiteralPath $generator) -or -not (Test-Path -LiteralPath $hashFile)) {
+        Fail 'The int4 mixed files of the package are incomplete; unpack the package again.'
+    }
+    $int4Sha = ((Get-Content -LiteralPath $hashFile -Raw).Trim() -split '\s+')[0]
+    $int4ModelFrom = Join-Path ([System.IO.Path]::GetTempPath()) ("dlssnr-int4-$([guid]::NewGuid().ToString('N')).bin")
+    Say 'Making the int4 mixed weights from the model ...'
+    & $generator $modelFrom $int4Data $int4ModelFrom
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $int4ModelFrom) -or
+        (Get-FileHash -LiteralPath $int4ModelFrom -Algorithm SHA256).Hash -ne $int4Sha) {
+        Remove-Item -LiteralPath $int4ModelFrom -Force -ErrorAction SilentlyContinue
+        Fail 'Making or checking the int4 mixed weights failed; the game folder was not changed.'
+    }
+}
 if (Test-Path -LiteralPath $manifest) { Say 'Found a previous installation, removing it first.'; Remove-Installed }
 
 Set-Content -LiteralPath $manifest -Value "F $ManifestName" -Encoding UTF8
 Put-Tree (Join-Path $here 'dlssnr-amd') 'dlssnr-amd'
 if ($modelFrom -ne $model) { Copy-Item -LiteralPath $modelFrom -Destination (Join-Path $game 'dlssnr-amd\dlssnr.bin') -Force }
+if ($int4ModelFrom) {
+    try { Put-File $int4ModelFrom 'dlssnr-amd\dlssnr-int4.bin' }
+    finally { Remove-Item -LiteralPath $int4ModelFrom -Force -ErrorAction SilentlyContinue }
+}
 $exeName = [System.IO.Path]::GetFileNameWithoutExtension($exe)
 Record-Logs @('dlssnr-amd.log', 'dlssnr-amd-crash.dmp')
 
@@ -319,38 +401,74 @@ if ($Route -eq 'optiscaler') {
     }
     [System.IO.File]::WriteAllLines($ini, $lines)
     foreach ($key in $wanted.Keys) { if (-not $seen.ContainsKey($key)) { Say "Note: $key not found in OptiScaler.ini" } }
-} elseif ($Route -eq 'reshade') {
+} elseif ($Route -eq 'reshade-feeder') {
     # DX10/11/12 games keep the system's own D3D; ReShade goes in as dxgi.dll.
     Put-ReShade $false
 } else {
     # DX9: DXVK moves the game to Vulkan, ReShade runs as a Vulkan layer. Vulkan games: only the ReShade layer.
     # The Vulkan loader in the game folder never calls DXGI and finds ReShade's layer beside it.
     Put-File (Join-Path $here 'vulkan\vulkan-1.dll') 'vulkan-1.dll'
-    if ($Route -eq 'dx9') {
+    if ($Route -eq 'reshade-feeder-dx9') {
         Put-File (Join-Path $here 'dxvk\d3d9.dll') 'd3d9.dll'
         Put-File (Join-Path $here 'dxvk\dxgi.dll') 'dxgi.dll'
         Record-Logs @("${exeName}_dxgi.log", "${exeName}_d3d9.log")
     }
     Put-ReShade $true
-    if ($Route -eq 'dx9') {
+    if ($Route -eq 'reshade-feeder-dx9') {
         Copy-Item -LiteralPath (Join-Path $here 'reshade\ReShadePreset-d3d9.ini') -Destination (Join-Path $game 'ReShadePreset.ini') -Force
     }
 }
 
 # dlssnr-amd.ini is written at install with every setting and its description (a reinstall writes the defaults
 # again). Uninstall deletes it.
-if ($Route -eq 'optiscaler') { $iniSrc = 'ini\dlssnr-amd-optiscaler.ini' } else { $iniSrc = 'ini\dlssnr-amd-addon.ini' }
-Copy-Item -LiteralPath (Join-Path $here $iniSrc) -Destination (Join-Path $game 'dlssnr-amd.ini') -Force
+if ($Route -eq 'optiscaler' -and $RenoDX -eq 'on') { $iniSrc = "ini\$Network\dlssnr-amd-optiscaler-renodx.ini" }
+elseif ($Route -eq 'optiscaler') { $iniSrc = "ini\$Network\dlssnr-amd-optiscaler.ini" }
+else { $iniSrc = "ini\$Network\dlssnr-amd-addon.ini" }
+$iniDst = Join-Path $game 'dlssnr-amd.ini'
+Copy-Item -LiteralPath (Join-Path $here $iniSrc) -Destination $iniDst -Force
+if ($Route -ne 'optiscaler' -and $RenoDX -eq 'on') {
+    # RenoDX style: Enabled = 1 in the [RenoDX] section
+    $lines = [System.IO.File]::ReadAllLines($iniDst, [System.Text.Encoding]::UTF8)
+    $inRenoDX = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\[') { $inRenoDX = $lines[$i] -eq '[RenoDX]' }
+        elseif ($inRenoDX -and $lines[$i] -eq 'Enabled = 0') { $lines[$i] = 'Enabled = 1' }
+    }
+    [System.IO.File]::WriteAllText($iniDst, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
 Record-Logs @('dlssnr-amd.ini')
 
 Say ''
-Say "Installed into: $game"
+Say "Installed into: $game$(if ($RenoDX -eq 'on') { ' (RenoDX style)' })"
+$aco = if ($Network -eq 'aco' -or $Network -eq 'aco-int4-mixed') { 1 } else { 0 }
+Say "Network: ACO Mode = $aco ([Network] in dlssnr-amd.ini; a change takes effect after a game restart)"
+if ($int4ModelFrom) {
+    $i4 = if ($Network -eq 'aco-int4-mixed') { 1 } else { 0 }
+    Say "int4 mixed: Enabled = $i4 ([Int4Mixed] in dlssnr-amd.ini). Ctrl+F11 in game switches between int4 mixed and the default network."
+    if ($aco -eq 0) { Say 'Switching to int4 mixed with Ctrl+F11 needs ACO Mode = 1.' }
+}
 if ($Route -eq 'optiscaler') {
-    Say 'In the game, turn on DLSS (or FSR / XeSS) in the graphics settings. Insert opens the OptiScaler menu;'
-    Say 'the NR settings are on the DLSS Neural Rendering page.'
+    if ($RenoDX -eq 'on') {
+        Say 'In the game, turn on DLSS (or FSR / XeSS) in the graphics settings. Insert opens the OptiScaler menu (with the RenoDX style on, it only handles upscaling and frame generation).'
+    } else {
+        Say 'In the game, turn on DLSS (or FSR / XeSS) in the graphics settings. Insert opens the OptiScaler menu;'
+        Say 'the NR settings are on the DLSS Neural Rendering page.'
+    }
     Say 'If colours turn green or grainy after NR (007 First Light, for example), try [Preprocess] in dlssnr-amd.ini, or press Ctrl+F10 in the game.'
+    Say "End opens NR Control (this project's NR menu: int4 mixed, Preprocess$(if ($RenoDX -eq 'on') { ', and every NR setting of the RenoDX style' }))."
+    if ($RenoDX -eq 'on') {
+        Say 'The RenoDX style is on ([RenoDX] Enabled = 1 in dlssnr-amd.ini). With it on, every NR setting is in NR Control ([RenoDX]);'
+        Say 'the OptiScaler menu only handles upscaling and frame generation, and its NR page has no effect. Turning the RenoDX style off'
+        Say '(Enabled = 0, restart the game) brings back the previous behaviour, with the NR settings in the OptiScaler menu.'
+        Say 'F5 saves a screenshot (the same frame without and with NR) to NR Screenshots in the game folder.'
+    }
 } else {
     Say 'In the game, Home opens ReShade; the settings are on the Add-ons page, or edit dlssnr-amd.ini in the game folder.'
+    if ($RenoDX -eq 'on') {
+        Say 'The RenoDX style is on ([RenoDX] Enabled = 1 in dlssnr-amd.ini). With it on, every NR setting is in the RenoDX part of the'
+        Say 'Add-ons page ([RenoDX]), and the NR settings of [DlssNr] have no effect. Turning it off (Enabled = 0, restart the game)'
+        Say 'brings back the previous behaviour. F5 saves a screenshot (the same frame without and with NR) to NR Screenshots in the game folder.'
+    }
 }
 Say 'The first time NR runs in a game the network has to compile; it takes effect after about a minute. This happens once for each game.'
 Say 'Uninstall: run install.bat again and choose 5.'

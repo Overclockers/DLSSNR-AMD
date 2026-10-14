@@ -54,4 +54,9 @@ void restore(ID3D12GraphicsCommandList* list, const std::shared_ptr<Snapshot>& s
 // gets its own state back, not whatever the evaluate bound).
 bool cut(ID3D12GraphicsCommandList* list, Job job, const std::shared_ptr<Snapshot>& state, std::string* why);
 
+// The direct queue this thread last handed command lists to, once the queue class is hooked (null: none seen). For
+// NR Control (nr_pe_menu.cpp): a D3D12 swap chain does not say which queue presents it, and a game presents on the
+// thread that has just executed its frame on that queue.
+ID3D12CommandQueue* last_direct_queue();
+
 }  // namespace nr::pe::split

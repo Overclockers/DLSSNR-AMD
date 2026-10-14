@@ -46,12 +46,14 @@ python3 windows/build/generate_device_chain.py toolchain/Vulkan-Headers "$out/nr
 # way to tell from a game whether a fix is in the binary that ran.
 stamp=$(bash windows/build/version.sh)
 common=(-std=c++17 -O2 -DNDEBUG -DNR_BUILD_STAMP="\"$stamp\"" -Itoolchain/Vulkan-Headers/include -Iwindows/src -Iwindows/src/core -Iwindows/src/pe -I"$out")
+[[ "${NR_INT4:-1}" == 1 ]] && common+=(-DNR_INT4=1)
 
 # The network the package ships (windows/build/arch/rdna4.sh): the host must be built
 # with the same constants as the shaders in dlssnr-amd/shaders.
 source windows/build/arch/rdna4.sh
 "$cxx" "${common[@]}" "${NR_PRODUCT_DEFINES[@]}" -c windows/src/core/nr_runtime.cpp -o "$out/nr_runtime.o"
 "$cxx" "${common[@]}" -c windows/src/core/nr_native_plan.cpp -o "$out/nr_native_plan.o"
+"$cxx" "${common[@]}" -c windows/src/core/nr_renodx.cpp -o "$out/nr_renodx.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_log.cpp -o "$out/log.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_crash.cpp -o "$out/crash.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_interop.cpp -o "$out/interop.o"
@@ -61,6 +63,18 @@ source windows/build/arch/rdna4.sh
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_d3d12split.cpp -o "$out/d3d12split.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_pe_config.cpp -o "$out/config.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_dlssnr_model.cpp -o "$out/model.o"
+"$cxx" "${common[@]}" -c windows/src/pe/nr_pe_renodx_route.cpp -o "$out/renodx_route.o"
+"$cxx" "${common[@]}" -I"$minhook/include" -c windows/src/pe/nr_pe_control.cpp -o "$out/control.o"
+# NR Control (End), drawn by the DLL over the game's swap chain: ImGui with its D3D11 and D3D12 backends.
+imgui=${NR_IMGUI_ROOT:-toolchain/imgui-nr}
+[[ -f "$imgui/imgui_impl_dx12.cpp" ]] || { echo "missing $imgui (ImGui with its D3D backends)" >&2; exit 1; }
+"$cxx" "${common[@]}" -I"$minhook/include" -I"$imgui" -Iwindows/src/ui -c windows/src/pe/nr_pe_menu.cpp -o "$out/menu.o"
+for unit in imgui imgui_draw imgui_tables imgui_widgets imgui_impl_dx11; do
+    "$cxx" -std=c++17 -O2 -DNDEBUG -I"$imgui" -c "$imgui/$unit.cpp" -o "$out/im_$unit.o"
+done
+"$cxx" -std=c++17 -O2 -DNDEBUG -I"$imgui" -include windows/src/pe/mingw_d3d12_compat.h -c "$imgui/imgui_impl_dx12.cpp" \
+    -o "$out/im_imgui_impl_dx12.o"
+"$cxx" "${common[@]}" -c windows/src/pe/nr_screenshot.cpp -o "$out/screenshot.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_dlssnr_forwarder.cpp -o "$out/forwarder.o"
 "$cxx" "${common[@]}" -c windows/src/pe/nr_ngx_core.cpp -o "$out/ngx_core.o"
 "$cxx" "${common[@]}" -I"$minhook/include" -c windows/src/pe/nr_pe_optifix.cpp -o "$out/optifix.o"
@@ -79,7 +93,8 @@ ldflags=(-ld3d12 -ldxgi -lole32 -static -static-libgcc -static-libstdc++)
 # import of vulkan-1.dll forces winevulkan up before the game's graphics stack, which has killed a
 # real game. This link is expected to fail; its failure is the input to the next step.
 shared_objs=("$out/model.o" "$out/session.o" "$out/bridge.o" "$out/d3d12split.o" "$out/config.o" "$out/interop.o" "$out/log.o" "$out/crash.o" "$out/vkdevice.o"
-             "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out"/mh_*.o)
+             "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o" "$out/renodx_route.o" "$out/control.o"
+             "$out/menu.o" "$out"/im_*.o "$out/screenshot.o" "$out"/mh_*.o)
 forwarder_objs=("$out/forwarder.o" "${shared_objs[@]}")
 core_objs=("$out/ngx_core.o" "$out/optifix.o" "${shared_objs[@]}")
 # Both links contribute undefined vk* names; the probe link takes every object either DLL uses so one
@@ -140,6 +155,10 @@ echo "vulkan entry points resolved at run time: $count"
 "$cxx" -shared -o "$out/_nvngx.dll" \
     "${core_objs[@]}" "$out/vulkan_lazy_s.o" "$out/vulkan_lazy_c.o" "${ldflags[@]}"
 
+# nr_present_probe.exe (dlssnr-amd\): finds DXGI's swap-chain methods for NR Control in a process of its own.
+"$cxx" -std=c++17 -O2 -DNDEBUG -municode windows/src/pe/nr_present_probe.cpp -o "$out/nr_present_probe.exe" \
+    -ldxgi -static -static-libgcc -static-libstdc++
+
 # dxgi-original.dll: DXVK's DXGI for the game, the system's for the display driver's own
 # presentation (windows/src/pe/nr_dxgi_split.cpp). Needs nothing but the log.
 "$cxx" "${common[@]}" -c windows/src/pe/nr_dxgi_split.cpp -o "$out/dxgi_split.o"
@@ -159,7 +178,7 @@ cp -- "$out/nvngx.dll_dlssnr.dll" "$out/nvngx_dlssnr.dll"
 
 echo
 echo "built in $out:"
-for dll in nvngx.dll_dlssnr.dll nvngx_dlssnr.dll _nvngx.dll dxgi-original.dll; do
+for dll in nvngx.dll_dlssnr.dll nvngx_dlssnr.dll _nvngx.dll dxgi-original.dll nr_present_probe.exe; do
     printf '  %-24s %s bytes\n' "$dll" "$(stat -c %s "$out/$dll")"
 done
 

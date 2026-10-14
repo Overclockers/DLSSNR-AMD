@@ -61,13 +61,14 @@ the add-on gets a real `VkDevice`. That needs three pieces of plumbing:
 
 Native Vulkan games use the same route: ReShade as a layer under the game's own Vulkan device.
 
-**NR Control.** On the OptiScaler route the NR menu (End) is a Linux Vulkan layer
+**NR Control.** On Linux, the OptiScaler route's NR menu (End) is a Vulkan layer
 (`linux/src/layer/nr_control_layer.cpp`, menu contents in `linux/src/ui/nr_control_ui.hpp`, shared with the
 ReShade Add-ons page). It draws into an image of its own and composites it in the swap chain's encoding.
 It calls the next layer through its dispatch table only. It talks to the NGX core (a Windows DLL in the
 same process under Proton) through `dlssnr-amd/control.bin` (`linux/src/core/nr_control_shared.hpp`):
 status from the core, settings through `dlssnr-amd.ini`, and on Wayland the keyboard and mouse, which the
-core reads from the game window.
+core reads from the game window. The Windows version draws the same menu from the NGX core itself; see
+Windows below.
 
 **RenoDX style.** `[RenoDX] Enabled = 1` wraps the network in RenoDX's DLSS5 processing on every route
 (`linux/src/core/nr_renodx.cpp`): RenoDX's encode, look and resolve shaders (`linux/shaders/renodx`,
@@ -99,12 +100,27 @@ shared D3D fence imported as a Vulkan timeline semaphore:
 D3D9 shares neither textures nor fences, so DX9 games run on DXVK with ReShade as a Vulkan layer
 underneath it, as on Linux.
 
+NR Control on Windows has no Vulkan swap chain to sit on: the NGX core hooks DXGI's `Present`, `Present1`
+and `SetColorSpace1` in the system's `dxgi.dll` (`windows/src/pe/nr_pe_menu.cpp`), below OptiScaler's own
+swap chain wrapper, so the menu lands on the frame after OptiScaler's menu and frame generation. The
+addresses come from `dlssnr-amd\nr_present_probe.exe`, which makes D3D12 and D3D11 swap chains in a
+process of its own and writes each method as a module path and offset: a swap chain made inside the game
+would be seen, and kept, by the hooks OptiScaler has there. While open, the menu is drawn with Dear ImGui
+(D3D11 or D3D12 backend, on the swap chain's device) into an 8-bit image of its own and laid
+over the back buffer in the swap chain's encoding (SDR, scRGB or HDR10, from `SetColorSpace1` and the
+format). Its contents are Linux's (`windows/src/ui/nr_control_ui.hpp`); status comes from the core in the
+same process, settings go through `dlssnr-amd.ini`, and keyboard and mouse come from the game window.
+
 The Windows version runs the same network through AMD's Windows shader compiler, which produces slower
 code for the largest kernels than Mesa's ACO does on Linux. With `[Network] ACO Mode = 1` it imports
-machine code made by ACO for the Linux shaders instead (`windows/data/aco/records`), through
+machine code made by ACO for the Linux shaders instead (`windows/data/aco/records`; int4 mixed's in
+`windows/data/aco/int4`), through
 `VK_KHR_pipeline_binary`: the driver compiles a shader with the same interface to get its pipeline
 container, ACO's code is put into that container (`windows/src/core/nr_pal_binary.hpp`,
-`nr_pipeline_binary.hpp`), and the imported binaries are kept in `dlssnr-amd\aco-cache`.
+`nr_pipeline_binary.hpp`), and the imported binaries are kept in `dlssnr-amd\aco-cache`. Whether AMD's
+driver runs the GPU is asked of AMD's driver itself, by the adapter's LUID
+(`windows/src/core/nr_driver_identity.hpp`), not of the Vulkan loader: OptiScaler's GPU spoofing changes
+what the loader reports.
 
 ## Why Vulkan and not HIP/ROCm
 
@@ -142,7 +158,8 @@ linux/                 the Linux version (the reference implementation)
   package/               installer, README and model-tools/ (model extraction)
   vulkan-loader/         patches for the Khronos loader used by the reshade-feeder-vulkan/-dx9 routes
 windows/               a separate copy for the AMD Windows driver, changed on its own
-  data/aco/              ACO machine code of the Linux network, for [Network] ACO Mode = 1
+  src/pe/nr_pe_menu.cpp  NR Control on Windows (DXGI Present hook, D3D11/D3D12 drawing)
+  data/aco/              ACO machine code of the Linux network, for [Network] ACO Mode = 1 (int4/: int4 mixed)
 fetch_deps.sh          pinned third-party downloads
 ```
 

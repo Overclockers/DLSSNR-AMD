@@ -925,10 +925,17 @@ QueueFence* completion_fence(ID3D12CommandQueue* q) {
     return &g_queue_fences.back();
 }
 
+thread_local ID3D12CommandQueue* t_last_direct = nullptr;
+thread_local ID3D12CommandQueue* t_last_seen = nullptr;
+
 void STDMETHODCALLTYPE hk_Execute(ID3D12CommandQueue* q, UINT n, ID3D12CommandList* const* lists) {
     // Patching is under g_mutex; the class table only grows, so a lookup outside it is safe once the
     // hook it led here through exists.
     const PFN_Execute execute = execute_of(q);
+    if (q != t_last_seen) {   // last_direct_queue(): asked once per change of queue on this thread
+        t_last_seen = q;
+        if (q->GetDesc().Type == D3D12_COMMAND_LIST_TYPE_DIRECT) t_last_direct = q;
+    }
     if (g_pending.load(std::memory_order_acquire) == 0 && g_held_count.load(std::memory_order_acquire) == 0)
         return execute(q, n, lists);
     // The cuts of these lists are taken out under the lock; the lists are executed outside it, so no
@@ -1325,5 +1332,7 @@ bool cut(List* list, Job job, const std::shared_ptr<Snapshot>& state, std::strin
 }
 
 #endif
+
+ID3D12CommandQueue* last_direct_queue() { return t_last_direct; }
 
 }  // namespace nr::pe::split

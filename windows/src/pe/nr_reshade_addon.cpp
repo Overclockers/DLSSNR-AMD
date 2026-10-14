@@ -24,7 +24,9 @@
 // build/ and artifacts/ beside it, exactly like the standalone module. dlssnr-amd.ini
 // is shared with it.
 #include "nr_pe_bridge.hpp"
+#include "nr_screenshot.hpp"
 #include "nr_pe_config.hpp"
+#include "nr_control_ui.hpp"
 #include "nr_pe_interop.hpp"
 #ifndef NR_BUILD_STAMP
 #define NR_BUILD_STAMP "unknown"
@@ -35,6 +37,8 @@
 #include "nr_pe_vkdevice.hpp"
 
 #include <MinHook.h>
+#include <dxgi1_6.h>
+#include <tlhelp32.h>
 
 // ReShade's overlay draws through its own ImGui function table; the header
 // must see imgui.h first, with the texture id type ReShade expects.
@@ -50,12 +54,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwctype>
 #include <map>
 #include <memory>
 #include <optional>
 #include <type_traits>
 #include <mutex>
 #include <string>
+#include <vector>
 
 extern "C" __declspec(dllexport) const char* NAME = "DLSS 5 NR on AMD";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
@@ -148,12 +154,24 @@ std::string config_path;
 nr::pe::PreprocessSwitch prep_switch;   // [Preprocess] Enabled and its hotkey
 bool vk_loaded = false;
 
+// [RenoDX] Enabled as it was when the add-on loaded: the option is switched by restarting the game (its other
+// keys follow the file while the game runs).
+bool renodx_on = false;
+
 // The one runtime we feed. A game usually has one; a second one (a proxy
 // swapchain, a second window) is ignored until the first goes away.
 effect_runtime* bound = nullptr;
 effect_technique technique{};
 effect_texture_variable mv_var{}, depth_var{};
 bool need_reset = true;
+// The bound effect runtime's presents, and their count when NR last ran a frame: frames between two NR frames
+// without NR ([DlssNr] Enabled or RenoDX's NeuralUplift off, the technique off, frames declined) and the next NR
+// frame starts its history afresh, as OptiScaler's features do when NR comes back on.
+uint64_t presents = 0, presents_at_run = 0;
+bool have_run = false;
+// More presents than NR frames by up to this many is frame generation (a generated frame between rendered ones,
+// several with multi-frame generation), not NR having been off.
+constexpr uint64_t kResumeGap = 8;
 bool missing_reported = false;
 std::string last_status;
 unsigned frames_run = 0, frames_declined = 0;
@@ -161,21 +179,26 @@ unsigned frames_run = 0, frames_declined = 0;
 const nr::Controls& settings() {
     if (!config_path.empty() && config.reload(config_path)) {
         if (session) {
-        session->set_history_strength(config.history);
+        session->set_history_strength(renodx_on ? 1.0f : config.history);
         session->set_white_point(config.white_point);
-        session->set_max_passes(uint32_t(config.controls.passes));
+        session->set_max_passes(renodx_on ? 1u : uint32_t(config.controls.passes));
     }
         static const char* const transfers[] = {"matched residual", "edge-aware lighting + colour", "classic"};
         static const char* const scalers[] = {"bilinear", "catmullrom", "lanczos3", "fsr1"};
         log("[nr] settings reloaded: intensity %.2f tone %.2f structure %.2f skin %.2f mask %d history %.2f passes %d model_scale %.2f"
-            " enlargement %s%s%s",
+            " enlargement %s%s%s%s",
             config.controls.intensity, config.controls.local_tone, config.controls.local_structure,
             config.controls.skin_structure, int(config.controls.automatic_mask), config.history,
             config.controls.passes, config.model_scale, transfers[std::clamp(config.controls.transfer, 0, 2)],
             config.controls.transfer == nr::kEnlargeClassic ? " " : "",
-            config.controls.transfer == nr::kEnlargeClassic ? scalers[std::clamp(config.controls.classic_scaler, 0, 3)] : "");
+            config.controls.transfer == nr::kEnlargeClassic ? scalers[std::clamp(config.controls.classic_scaler, 0, 3)] : "",
+            config.controls.noise_every_frame ? "; NoiseEveryFrame on" : "");
+        if (renodx_on)
+            log("[nr] RenoDX-style option: [RenoDX] read (colour %.2f, transfer %.2f, resolution scale %.2f, detail "
+                "stability %u)", config.renodx.values.color_strength, config.renodx.values.transfer_strength,
+                config.renodx.values.resolution_scale, config.renodx.values.detail_stability);
     }
-    if (session) session->set_model_scale(config.model_scale);
+    if (session) session->set_model_scale(renodx_on ? 1.0f : config.model_scale);
     config.controls.preprocess = prep_switch.frame(config.preprocess);
     return config.controls;
 }
@@ -207,15 +230,17 @@ nr::pe::Session& the_session() {
         // the transfer pass against x0.9718 native, measured 2026-09-17), so
         // nothing is given up by doing it the way this route needs.
         session->set_native_compose(false);
-        session->set_history_strength(config.history);
+        session->set_history_strength(renodx_on ? 1.0f : config.history);
         session->set_white_point(config.white_point);
-        session->set_model_scale(config.model_scale);
-        session->set_max_passes(uint32_t(config.controls.passes));
+        session->set_model_scale(renodx_on ? 1.0f : config.model_scale);
+        session->set_max_passes(renodx_on ? 1u : uint32_t(config.controls.passes));
     }
     return *session;
 }
 
 void report(const std::string& status) {
+    // A background build's notice goes once the network it announced is in (the session's status is then empty).
+    if (status.empty() && last_status.rfind("building the network", 0) == 0) { last_status.clear(); return; }
     if (status.empty() || status == last_status) return;
     last_status = status;
     log("[nr] %s", status.c_str());
@@ -262,6 +287,118 @@ void vulkan_selftest(VkDevice device);
 // ReShade knows: `swapchain::get_color_space()`. The effect runtime is not a
 // swapchain, so it is taken from init_swapchain and kept.
 color_space back_buffer_space = color_space::unknown;
+
+// The RenoDX-style option at RenoDX's Present hook point (present_path.hpp), which is where this route runs: the
+// back buffer's encoding from the colour space - 1 SDR, 2 HDR10 (PQ over BT.2020), 3 scRGB - with NRPresentEncoding
+// able to force one the back buffer can carry; 0 = not served (HLG, unknown).
+uint32_t present_encoding(const nr::renodx::Settings& s, DXGI_FORMAT f) {
+    const bool float_format = f == DXGI_FORMAT_R16G16B16A16_FLOAT;
+    const uint32_t automatic = back_buffer_space == color_space::srgb_nonlinear ? 1u
+                               : back_buffer_space == color_space::hdr10_st2084 ? 2u
+                               : back_buffer_space == color_space::extended_srgb_linear ? 3u : 0u;
+    uint32_t e = s.present_encoding;
+    if (e != 0 && automatic != 0 &&
+        ((e == 2 && f != DXGI_FORMAT_R10G10B10A2_UNORM && !float_format) || (e == 3 && !float_format)))
+        e = automatic;
+    if (e == 0) e = automatic;
+    if (e == 2 && f != DXGI_FORMAT_R10G10B10A2_UNORM && !float_format) return 0;
+    if (e == 3 && !float_format) return 0;
+    return e;
+}
+
+// QueryPresentSdrWhite: the Windows SDR content level of the display the swap chain is on, in nits, only while it
+// runs HDR (1000 = 80 nits; 200 reads as 203); 0 when it cannot be read (no DXGI swap chain, Proton without it).
+float query_sdr_white(effect_runtime* rt) {
+    const device_api api = rt->get_device()->get_api();
+    if (api != device_api::d3d10 && api != device_api::d3d11 && api != device_api::d3d12) return 0.f;
+    auto* native = reinterpret_cast<IDXGISwapChain*>(rt->get_native());
+    IDXGIOutput* output = nullptr;
+    if (!native || FAILED(native->GetContainingOutput(&output)) || !output) return 0.f;
+    DXGI_OUTPUT_DESC1 desc{};
+    IDXGIOutput6* output6 = nullptr;
+    const bool described = SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6))) &&
+                           SUCCEEDED(output6->GetDesc1(&desc));
+    if (output6) output6->Release();
+    output->Release();
+    if (!described || desc.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020) return 0.f;
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    LONG result = ERROR_INSUFFICIENT_BUFFER;
+    UINT32 path_count = 0;
+    while (result == ERROR_INSUFFICIENT_BUFFER) {
+        UINT32 mode_count = 0;
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &path_count, &mode_count) != ERROR_SUCCESS) return 0.f;
+        paths.resize(path_count);
+        modes.resize(mode_count);
+        result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &path_count, paths.data(), &mode_count, modes.data(), nullptr);
+    }
+    if (result != ERROR_SUCCESS) return 0.f;
+    for (UINT32 i = 0; i < path_count; ++i) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME source{};
+        source.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        source.header.size = sizeof(source);
+        source.header.adapterId = paths[i].sourceInfo.adapterId;
+        source.header.id = paths[i].sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS || wcscmp(source.viewGdiDeviceName, desc.DeviceName) != 0)
+            continue;
+        DISPLAYCONFIG_SDR_WHITE_LEVEL white{};
+        white.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+        white.header.size = sizeof(white);
+        white.header.adapterId = paths[i].targetInfo.adapterId;
+        white.header.id = paths[i].targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&white.header) != ERROR_SUCCESS) return 0.f;
+        const float nits = float(white.SDRWhiteLevel) / 1000.f * 80.f;
+        return nits == 200.f ? 203.f : nits;
+    }
+    return 0.f;
+}
+
+// A RenoDX add-on (renodx-*.addon*) other than this one in the process: its Game Brightness is the HDR white
+// (present_path.hpp present_mod_white).
+bool renodx_mod_loaded() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    MODULEENTRY32W me{};
+    me.dwSize = sizeof me;
+    bool found = false;
+    for (BOOL ok = Module32FirstW(snap, &me); ok && !found; ok = Module32NextW(snap, &me)) {
+        std::wstring w = me.szModule;
+        for (wchar_t& c : w) c = wchar_t(std::towlower(c));
+        found = w.rfind(L"renodx-", 0) == 0 && w.find(L".addon") != std::wstring::npos;
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+// The HDR diffuse white, as RenoDX's Present path takes it (polled at most once a second: DisplayConfig can block):
+// NRPresentWhiteNits; else a RenoDX mod's ToneMapGameNits ([renodx-preset1] with its tone mapper on, 48..10000,
+// NRPresentWhiteSource 0 only); else the Windows SDR content level; else NRDiffuseWhiteNits.
+float present_white(effect_runtime* rt, const nr::renodx::Settings& s) {
+    static uint64_t polled = 0;
+    static float windows = 0.f, mod = 0.f;
+    const uint64_t now = GetTickCount64();
+    if (polled == 0 || now - polled >= 1000) {
+        polled = now;
+        windows = query_sdr_white(rt);
+        float tone_mapper = 0.f, game_nits = 0.f;
+        mod = renodx_mod_loaded() && reshade::get_config_value(nullptr, "renodx-preset1", "ToneMapType", tone_mapper) &&
+                      tone_mapper != 0.f &&
+                      reshade::get_config_value(nullptr, "renodx-preset1", "ToneMapGameNits", game_nits) &&
+                      game_nits >= 48.f && game_nits <= 10000.f
+                  ? game_nits : 0.f;
+    }
+    const float m = s.present_white_source == 0 ? mod : 0.f;
+    const float white = s.present_white_nits > 0.f ? s.present_white_nits : m > 0.f ? m : windows > 0.f ? windows
+                                                                                                 : s.diffuse_white_nits;
+    static float logged = -1.f;
+    if (white != logged) {
+        logged = white;
+        log("[nr] RenoDX-style option: HDR diffuse white %.0f nits from %s", white,
+            s.present_white_nits > 0.f ? "NRPresentWhiteNits" : m > 0.f ? "the RenoDX mod's Game Brightness"
+            : windows > 0.f ? "the Windows SDR content brightness" : "NRDiffuseWhiteNits");
+    }
+    return white;
+}
 
 const char* space_name(color_space cs) {
     switch (cs) {
@@ -650,15 +787,20 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
     if (motion.handle) {
         const resource_desc md = rs::call(dev, &device::get_resource_desc, motion);
         if (md.texture.width != w || md.texture.height != h_) {
-            // The vectors are in back-buffer pixels at back-buffer size: another size is not read.
-            report("DLSS5_MV is not the back buffer's size; the pass runs without motion");
-            motion = resource{};
+            report("DLSS5_MV is not the back buffer's size; its vectors are read across the whole texture, "
+                   "in back-buffer pixels");
         }
     }
     // DLSS5_MV is in pixels at back-buffer size, prev = uv + mv: the consumer's
     // normalized units are one over the extent, and the sign is already ours.
     const float sx = w ? 1.0f / float(w) : 1.0f, sy = h_ ? 1.0f / float(h_) : 1.0f;
     const bool inverted = depth_is_reversed(rt);
+    if (have_run && presents > presents_at_run + kResumeGap) {
+        if (!need_reset)
+            log("[nr] NR runs again after %llu frame(s) without it: history restarts",
+                (unsigned long long)(presents - presents_at_run - 1));
+        need_reset = true;
+    }
     // Consumed only by a frame that ran: a reload that comes before a frame the pass turns away still
     // resets the first frame that does run.
     const bool reset = need_reset;
@@ -667,7 +809,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
     // pass decodes either. Running on it anyway would hand the model a picture
     // in a transfer function it has never seen and hand back a worse one, which
     // is a failure worth naming rather than a picture worth shipping.
-    if (back_buffer_space == color_space::hdr10_st2084 || back_buffer_space == color_space::hdr10_hlg) {
+    if (!renodx_on && (back_buffer_space == color_space::hdr10_st2084 || back_buffer_space == color_space::hdr10_hlg)) {
         report("the swapchain is HDR10 (PQ/HLG); this pass has no decode for it yet, so the frame is "
                "left alone - switch the game to SDR or scRGB HDR");
         return;
@@ -681,12 +823,57 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
     const nr::Controls& controls = config.controls;
     bool ran = false;
     auto& s = the_session();
+    // [RenoDX] Enabled at start: RenoDX's processing around the network (nr_renodx.hpp), its other keys as the file has
+    // them now.
+    nr::pe::Session::RenoDXFrame renodx_frame;
+    renodx_frame.hdr_flag = linear_hdr;
+    renodx_frame.after_upscale = true;
+    renodx_frame.settings = config.renodx.values;
+    {   // NeuralUplift as NRToggleKey left it
+        static nr::pe::NrToggle toggle;
+        renodx_frame.settings.nr_enabled = toggle.frame(config.renodx);
+    }
+    if (renodx_on) {   // RenoDX's NR screenshot (nr_screenshot.hpp): this route's final picture is the presented frame
+        static nr::pe::KeyPress screenshot_key;
+        const auto& r = config.renodx;
+        nr::pe::screenshot::configure({r.screenshot_source, r.screenshot_format, r.screenshot_layout,
+                                       r.screenshot_jpeg_quality, r.screenshot_max_mb});
+        if (screenshot_key.frame(r.screenshot_key)) nr::pe::screenshot::request();
+        nr::pe::screenshot::tick();
+    }
+    renodx_frame.preprocess = controls.preprocess;
+    const nr::pe::Session::RenoDXFrame* renodx = renodx_on ? &renodx_frame : nullptr;
+    if (renodx) {
+        renodx_frame.present = present_encoding(renodx_frame.settings, static_cast<DXGI_FORMAT>(cd.texture.format));
+        if (!renodx_frame.present) {
+            report("the RenoDX-style option cannot serve this swap chain (colour space " +
+                   std::string(space_name(back_buffer_space)) + ", format " + std::to_string(unsigned(cd.texture.format)) +
+                   "); the frame is left alone");
+            return;
+        }
+        if (renodx_frame.present != 1) renodx_frame.present_white_nits = present_white(rt, renodx_frame.settings);
+    }
+    // NRPresentGuides: Required needs DLSS5_Feed's motion vectors; Optional runs on neutral ones without them, Never
+    // always (Session::Impl::neutral_motion).
+    if (renodx && !motion.handle && renodx_frame.settings.present_guides == 1u) {
+        report("the RenoDX-style option needs DLSS5_Feed's motion vectors (NRPresentGuides = 1); the frame is left alone "
+               "until they are bound");
+        return;
+    }
 
     // The sampled pair: evaluates 1, 2, 3 and then every 300th, as the model's
     // readback does. Drain first, because the staging pair is reused and the
     // copy below would overwrite what is about to be read.
+    // NR_DEBUG_DUMP_RUN=<n> (a measurement aid): also every 4th evaluation of the 32 from the n-th, for how steady a
+    // still picture stays.
+    static const uint64_t run_from = [] {
+        char v[16] = {};
+        return GetEnvironmentVariableA("NR_DEBUG_DUMP_RUN", v, sizeof v) > 0 ? std::strtoull(v, nullptr, 10) : 0ull;
+    }();
     const bool sample = debug_dump_on() &&
-                        (++dump_state.seen <= 3 || dump_state.seen % 300 == 0);
+                        (++dump_state.seen <= 3 || dump_state.seen % 300 == 0 ||
+                         (run_from && dump_state.seen >= run_from && dump_state.seen < run_from + 32 &&
+                          (dump_state.seen - run_from) % 4 == 0));
     bool sampling = false;
     if (debug_dump_on()) {
         dump_drain(dev);
@@ -723,6 +910,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         f.motion_scale_x = sx; f.motion_scale_y = sy;
         f.reset = reset;
         f.linear_hdr = linear_hdr;
+        f.renodx = renodx;
         ran = s.run_d3d11(f, controls);
         break;
     }
@@ -737,6 +925,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         f.motion_scale_x = sx; f.motion_scale_y = sy;
         f.reset = reset;
         f.linear_hdr = linear_hdr;
+        f.renodx = renodx;
         ran = s.run_d3d10(f, controls);
         break;
     }
@@ -762,6 +951,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
             f.motion_scale_x = sx; f.motion_scale_y = sy;
             f.reset = reset;
             f.linear_hdr = linear_hdr;
+            f.renodx = renodx;
             ran = s.run_d3d12_queue(f, controls);
             break;
         }
@@ -785,8 +975,12 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         // for no reason while D3D11 and Vulkan left an HDR one raw. One answer
         // for all three now.
         r.colour_encoded = !linear_hdr;
-        ran = s.run_after(device, list, reinterpret_cast<ID3D12Resource*>(colour.handle),
-                          D3D12_RESOURCE_STATE_UNORDERED_ACCESS, r, controls);
+        ran = renodx ? s.run_renodx(device, list, reinterpret_cast<ID3D12Resource*>(colour.handle),
+                                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, r, controls,
+                                    reinterpret_cast<ID3D12Resource*>(colour.handle),
+                                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, *renodx)
+                     : s.run_after(device, list, reinterpret_cast<ID3D12Resource*>(colour.handle),
+                                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS, r, controls);
         cl->barrier(1, &colour, &to, &from);
         break;
     }
@@ -820,16 +1014,22 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         f.width = w; f.height = h_;
         // ReShade's word on the image's usage, in Vulkan's terms (the runtime reads and writes a
         // sampled + storage back buffer in place).
-        if ((cd.usage & resource_usage::shader_resource) != 0) f.colour_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        if ((cd.usage & resource_usage::unordered_access) != 0) f.colour_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-        if ((cd.usage & resource_usage::copy_source) != 0) f.colour_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        if ((cd.usage & resource_usage::copy_dest) != 0) f.colour_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        const auto vk_usage = [](resource_usage u) {
+            VkImageUsageFlags v = 0;
+            if ((u & resource_usage::shader_resource) != 0) v |= VK_IMAGE_USAGE_SAMPLED_BIT;
+            if ((u & resource_usage::unordered_access) != 0) v |= VK_IMAGE_USAGE_STORAGE_BIT;
+            if ((u & resource_usage::copy_source) != 0) v |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            if ((u & resource_usage::copy_dest) != 0) v |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            return v;
+        };
+        f.colour_usage = vk_usage(cd.usage);
         if (motion.handle) {
             const resource_desc md = rs::call(dev, &device::get_resource_desc, motion);
             f.motion = (VkImage)motion.handle;
             f.motion_format = nr::pe::vulkan_format_of(static_cast<DXGI_FORMAT>(md.texture.format));
             f.motion_width = md.texture.width; f.motion_height = md.texture.height;
             f.motion_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            f.motion_usage = vk_usage(md.usage);
         }
         if (depth.handle) {
             const resource_desc dd = rs::call(dev, &device::get_resource_desc, depth);
@@ -837,6 +1037,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
             f.depth_format = nr::pe::vulkan_format_of(static_cast<DXGI_FORMAT>(dd.texture.format));
             f.depth_width = dd.texture.width; f.depth_height = dd.texture.height;
             f.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            f.depth_usage = vk_usage(dd.usage);
         }
         f.depth_inverted = inverted;
         f.motion_scale_x = sx; f.motion_scale_y = sy;
@@ -856,6 +1057,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         cl->barrier(1, &colour, &rt, &src);
         f.colour_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         f.in_place = true;
+        f.renodx = renodx;
         const VkImage out = s.run_vulkan(h, cmd, f, controls);
         if (out == f.colour) {
             cl->barrier(1, &colour, &src, &rt);
@@ -885,7 +1087,7 @@ void feed(effect_runtime* rt, command_list* cl, resource_view rtv) {
         dump_state.pending = true;
     }
     report(s.status());
-    if (ran) need_reset = false;
+    if (ran) { need_reset = false; have_run = true; presents_at_run = presents; }
     if (ran) ++frames_run; else ++frames_declined;
     if ((frames_run + frames_declined) % 240 == 0)
         log("[nr] frames: %u enhanced, %u declined; %.2f ms on the GPU (network %.2f, route %.2f); %s", frames_run,
@@ -905,6 +1107,15 @@ void help_marker(const char* text) {
 
 // A slider that commits on release, with a Reset button. `inherit` (a later
 // pass) resets to "not set", which inherits pass 1.
+// [RenoDX]'s values for nr_control_ui.hpp, by its key table's index (nr_pe_config.cpp renodx_field).
+struct RenoDXAccess {
+    nr::pe::RenoDXConfig& r;
+    bool& b(int i) { return *static_cast<bool*>(nr::pe::renodx_field(r, i)); }
+    uint32_t& u(int i) { return *static_cast<uint32_t*>(nr::pe::renodx_field(r, i)); }
+    float& f(int i) { return *static_cast<float*>(nr::pe::renodx_field(r, i)); }
+    std::string& s(int i) { return *static_cast<std::string*>(nr::pe::renodx_field(r, i)); }
+};
+
 template <class Value>
 bool deferred_slider(const char* label, Value& value, float shown, float mn, float mx, float reset_to,
                      bool inherit, const char* help) {
@@ -998,110 +1209,153 @@ void draw_overlay(effect_runtime*) {
 
     draw_state();
 
-    changed |= ImGui::Checkbox("Enable Neural Rendering", &c.enabled);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable NR processing.");
-    changed |= ImGui::Checkbox("Apply model", &c.apply_model);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Show or hide the NR effect. The model still runs when hidden.\n"
-                          "Disable Enable Neural Rendering to stop its GPU cost.");
+    // With the RenoDX-style option every NR setting is [RenoDX]'s (the same menu as NR Control on the OptiScaler
+    // routes, nr_control_ui.hpp); [DlssNr]'s do not apply then.
+    if (renodx_on) {
+        RenoDXAccess access{config.renodx};
+        changed |= nr::control_ui::draw_renodx(access, nr::control_ui::Route::kReShade, true, [] {
+            if (ImGui::Button("Take a screenshot now")) nr::pe::screenshot::request();
+            ImGui::TextWrapped("Screenshot: %s", nr::pe::screenshot::status());
+        });
+    } else {
+        changed |= ImGui::Checkbox("Enable Neural Rendering", &c.enabled);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable NR processing.");
+        changed |= ImGui::Checkbox("Apply model", &c.apply_model);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Show or hide the NR effect. The model still runs when hidden.\n"
+                              "Disable Enable Neural Rendering to stop its GPU cost.");
 
-    {   // Model resolution: rebuilds the network, so it commits on release.
-        static int pending = -1;
-        int percent = pending >= 0 ? pending : int(std::lround(config.model_scale * 100.0f));
-        if (ImGui::SliderInt("Model resolution", &percent, 25, 100, "%d%%")) pending = percent;
-        if (ImGui::IsItemDeactivatedAfterEdit() && pending >= 0) {
-            config.model_scale = float(std::clamp(pending, 25, 100)) / 100.0f;
-            pending = -1;
-            changed = true;
-        }
-        help_marker("50% halves width and height. 100% uses the full input size.");
-        // Below 100%: how the model's result is enlarged to the frame (nr::kEnlarge*). Per frame, nothing rebuilds.
-        static const char* const transfers[] = {"Matched residual", "Edge-aware lighting + colour", "Classic"};
-        changed |= ImGui::Combo("Enlargement", &c.transfer, transfers, 3);
-        help_marker("Below 100% model resolution: how the model's result is enlarged to the frame.\n"
-                    "Matched residual (default): the model's change, enlarged, added to the full-size frame.\n"
-                    "Edge-aware lighting + colour: the change in light and in colour enlarged separately,\n"
-                    "weighted by the full-size frame's edges, then applied to the full-size frame.\n"
-                    "Classic: the model's picture enlarged with the scaler below.");
-        if (c.transfer == nr::kEnlargeClassic) {
-            static const char* const scalers[] = {"Bilinear", "Catmull-Rom", "Lanczos3", "FSR 1"};
-            changed |= ImGui::Combo("Classic scaler", &c.classic_scaler, scalers, 4);
-        }
-    }
-
-    {   // Model passes
-        const int limit = config.pass_limit();
-        static int passes = 1;
-        static bool editing = false;
-        if (!editing) passes = std::clamp(c.passes, 1, limit);
-        const ImVec4 text = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-        const float b = std::max({text.x, text.y, text.z});
-        ImGui::PushStyleColor(ImGuiCol_Text, passes == 1 ? ImVec4(b * 0.35f, b * 0.75f, b * 0.45f, text.w)
-                                                         : ImVec4(b * 0.80f, b * 0.35f, b * 0.32f, text.w));
-        ImGui::SliderInt("##Model passes", &passes, 1, limit, "%d", ImGuiSliderFlags_AlwaysClamp);
-        editing = ImGui::IsItemActive();
-        if (ImGui::IsItemDeactivatedAfterEdit()) { c.passes = std::clamp(passes, 1, limit); changed = true; }
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Model passes");
-        if (ImGui::Checkbox("Unlock up to 10 passes", &config.unlock_passes)) {
-            c.passes = std::clamp(c.passes, 1, config.pass_limit());
-            changed = true;
-        }
-    }
-
-    static const char* const styles[] = {"Standard", "Natural", "Cinematic"};
-    static const char* const inherited_styles[] = {"Auto", "Standard", "Natural", "Cinematic"};
-    if (ImGui::TreeNodeEx("Pass 1", ImGuiTreeNodeFlags_DefaultOpen)) {
-        changed |= ImGui::Combo("Style", &c.style, styles, 3);
-        changed |= model_sliders(c.intensity, c.local_structure, c.local_tone, c.skin_structure);
-        changed |= ImGui::Checkbox("Auto skin mask", &c.automatic_mask);
-        help_marker("Model-based skin selection.");
-        ImGui::TreePop();
-    }
-    for (int n = 2; n <= c.passes; ++n) {
-        char head[16];
-        std::snprintf(head, sizeof head, "Pass %d", n);
-        ImGui::PushID(n);
-        if (ImGui::TreeNodeEx(head, ImGuiTreeNodeFlags_DefaultOpen)) {
-            auto& o = config.pass[size_t(n) - 2];
-            int style = o.style ? *o.style + 1 : 0;
-            if (ImGui::Combo("Style", &style, inherited_styles, 4)) {
-                if (style == 0) o.style.reset(); else o.style = style - 1;
+        {   // Model resolution: rebuilds the network, so it commits on release.
+            static int pending = -1;
+            int percent = pending >= 0 ? pending : int(std::lround(config.model_scale * 100.0f));
+            if (ImGui::SliderInt("Model resolution", &percent, 25, 100, "%d%%")) pending = percent;
+            if (ImGui::IsItemDeactivatedAfterEdit() && pending >= 0) {
+                config.model_scale = float(std::clamp(pending, 25, 100)) / 100.0f;
+                pending = -1;
                 changed = true;
             }
-            changed |= deferred_slider("Intensity", o.intensity, o.intensity.value_or(c.intensity), 0.0f, 2.0f, 0, true, "Enhancement strength. 1 = default.");
-            changed |= deferred_slider("Local structure", o.local_structure, o.local_structure.value_or(c.local_structure), 0.0f, 2.0f, 0, true, "Fine detail and local contrast. 1 = default.");
-            changed |= deferred_slider("Local tone", o.local_tone, o.local_tone.value_or(0.0f), 0.0f, 2.0f, 0, true, "Broad lighting changes. Later passes default to 0.");
-            changed |= deferred_slider("Skin structure", o.skin_structure, o.skin_structure.value_or(c.skin_structure), -1.0f, 2.0f, 0, true, "Skin detail. -1 follows Local structure.");
-            bool mask = o.automatic_mask.value_or(c.automatic_mask);
-            if (ImGui::Checkbox("Auto skin mask", &mask)) { o.automatic_mask = mask; changed = true; }
+            help_marker("50% halves width and height. 100% uses the full input size.");
+            // Below 100%: how the model's result is enlarged to the frame (nr::kEnlarge*). Per frame, nothing rebuilds.
+            static const char* const transfers[] = {"Matched residual", "Edge-aware lighting + colour", "Classic"};
+            changed |= ImGui::Combo("Enlargement", &c.transfer, transfers, 3);
+            help_marker("Below 100% model resolution: how the model's result is enlarged to the frame.\n"
+                        "Matched residual (default): the model's change, enlarged, added to the full-size frame.\n"
+                        "Edge-aware lighting + colour: the change in light and in colour enlarged separately,\n"
+                        "weighted by the full-size frame's edges, then applied to the full-size frame.\n"
+                        "Classic: the model's picture enlarged with the scaler below.");
+            if (c.transfer == nr::kEnlargeClassic) {
+                static const char* const scalers[] = {"Bilinear", "Catmull-Rom", "Lanczos3", "FSR 1"};
+                changed |= ImGui::Combo("Classic scaler", &c.classic_scaler, scalers, 4);
+            }
+        }
+
+        {   // Model passes
+            const int limit = config.pass_limit();
+            static int passes = 1;
+            static bool editing = false;
+            if (!editing) passes = std::clamp(c.passes, 1, limit);
+            const ImVec4 text = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+            const float b = std::max({text.x, text.y, text.z});
+            ImGui::PushStyleColor(ImGuiCol_Text, passes == 1 ? ImVec4(b * 0.35f, b * 0.75f, b * 0.45f, text.w)
+                                                             : ImVec4(b * 0.80f, b * 0.35f, b * 0.32f, text.w));
+            ImGui::SliderInt("##Model passes", &passes, 1, limit, "%d", ImGuiSliderFlags_AlwaysClamp);
+            editing = ImGui::IsItemActive();
+            if (ImGui::IsItemDeactivatedAfterEdit()) { c.passes = std::clamp(passes, 1, limit); changed = true; }
+            ImGui::PopStyleColor();
             ImGui::SameLine();
-            if (ImGui::SmallButton("Reset##mask")) { o.automatic_mask.reset(); changed = true; }
+            ImGui::TextUnformatted("Model passes");
+            if (ImGui::Checkbox("Unlock up to 10 passes", &config.unlock_passes)) {
+                c.passes = std::clamp(c.passes, 1, config.pass_limit());
+                changed = true;
+            }
+        }
+
+        static const char* const styles[] = {"Standard", "Natural", "Cinematic"};
+        static const char* const inherited_styles[] = {"Auto", "Standard", "Natural", "Cinematic"};
+        if (ImGui::TreeNodeEx("Pass 1", ImGuiTreeNodeFlags_DefaultOpen)) {
+            changed |= ImGui::Combo("Style", &c.style, styles, 3);
+            changed |= model_sliders(c.intensity, c.local_structure, c.local_tone, c.skin_structure);
+            changed |= ImGui::Checkbox("Auto skin mask", &c.automatic_mask);
+            help_marker("Model-based skin selection.");
             ImGui::TreePop();
         }
-        ImGui::PopID();
-    }
+        for (int n = 2; n <= c.passes; ++n) {
+            char head[16];
+            std::snprintf(head, sizeof head, "Pass %d", n);
+            ImGui::PushID(n);
+            if (ImGui::TreeNodeEx(head, ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto& o = config.pass[size_t(n) - 2];
+                int style = o.style ? *o.style + 1 : 0;
+                if (ImGui::Combo("Style", &style, inherited_styles, 4)) {
+                    if (style == 0) o.style.reset(); else o.style = style - 1;
+                    changed = true;
+                }
+                changed |= deferred_slider("Intensity", o.intensity, o.intensity.value_or(c.intensity), 0.0f, 2.0f, 0, true, "Enhancement strength. 1 = default.");
+                changed |= deferred_slider("Local structure", o.local_structure, o.local_structure.value_or(c.local_structure), 0.0f, 2.0f, 0, true, "Fine detail and local contrast. 1 = default.");
+                changed |= deferred_slider("Local tone", o.local_tone, o.local_tone.value_or(0.0f), 0.0f, 2.0f, 0, true, "Broad lighting changes. Later passes default to 0.");
+                changed |= deferred_slider("Skin structure", o.skin_structure, o.skin_structure.value_or(c.skin_structure), -1.0f, 2.0f, 0, true, "Skin detail. -1 follows Local structure.");
+                bool mask = o.automatic_mask.value_or(c.automatic_mask);
+                if (ImGui::Checkbox("Auto skin mask", &mask)) { o.automatic_mask = mask; changed = true; }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset##mask")) { o.automatic_mask.reset(); changed = true; }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
 
-    if (ImGui::TreeNodeEx("Apply edit", ImGuiTreeNodeFlags_DefaultOpen)) {
-        changed |= ImGui::SliderFloat("Detail strength", &c.detail_strength, 0.0f, 2.0f, "%.2f");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Reset##detail")) { c.detail_strength = 1.0f; changed = true; }
-        help_marker("0 = no detail change. 1 = normal.");
-        changed |= ImGui::SliderFloat("Colour strength", &c.colour_strength, 0.0f, 4.0f, "%.2f");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Reset##colour")) { c.colour_strength = 1.0f; changed = true; }
-        help_marker("0 = game colours. 1 = model colours. Above 1 boosts saturation.");
-        changed |= ImGui::SliderFloat("Highlight guard", &c.max_ratio, 1.0f, 8.0f, "%.1fx");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Reset##guard")) { c.max_ratio = 2.0f; changed = true; }
-        help_marker("Limit pixel brightening and darkening.");
-        ImGui::TreePop();
+        if (ImGui::TreeNodeEx("Apply edit", ImGuiTreeNodeFlags_DefaultOpen)) {
+            changed |= ImGui::SliderFloat("Detail strength", &c.detail_strength, 0.0f, 2.0f, "%.2f");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset##detail")) { c.detail_strength = 1.0f; changed = true; }
+            help_marker("0 = no detail change. 1 = normal.");
+            changed |= ImGui::SliderFloat("Colour strength", &c.colour_strength, 0.0f, 4.0f, "%.2f");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset##colour")) { c.colour_strength = 1.0f; changed = true; }
+            help_marker("0 = game colours. 1 = model colours. Above 1 boosts saturation.");
+            changed |= ImGui::SliderFloat("Highlight guard", &c.max_ratio, 1.0f, 8.0f, "%.1fx");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset##guard")) { c.max_ratio = 2.0f; changed = true; }
+            help_marker("Limit pixel brightening and darkening.");
+            ImGui::TreePop();
+        }
+        // This project's own: the post block's previous-frame blend.
+        changed |= deferred_slider("History (previous frame blend)", config.history, config.history, 0.0f, 1.0f, 1.0f, false, nullptr);
     }
-    // This project's own: the post block's previous-frame blend.
-    changed |= deferred_slider("History (previous frame blend)", config.history, config.history, 0.0f, 1.0f, 1.0f, false, nullptr);
 
     // This project's own: [Preprocess]. Off is the upstream behaviour.
+#if NR_INT4
+    if (session && ImGui::TreeNodeEx("Int4 mixed", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const nr::pe::Session::State st = session->state();
+        bool on = st.want_int4 == 1;
+        ImGui::BeginDisabled(!st.int4_available);
+        if (ImGui::Checkbox("Use int4 mixed", &on)) {
+            session->set_int4(on);
+            config.int4 = on;
+            if (!config_path.empty()) config.save(config_path);
+        }
+        ImGui::EndDisabled();
+        char help[256];
+        std::snprintf(help, sizeof help,
+                      "Part of the network in int4 and other low-precision arithmetic: faster, a slightly different picture.\n"
+                      "%s%s%sThe first switch builds the other network (a few seconds); the running one serves until then.",
+                      config.int4_hotkey.empty() ? "" : "The hotkey ", config.int4_hotkey.c_str(),
+                      config.int4_hotkey.empty() ? "" : " switches it too.\n");
+        help_marker(help);
+        if (!st.int4_available) ImGui::TextDisabled("not available in this run (see dlssnr-amd.log)");
+        bool keep = config.int4_keep_both, sound = config.int4_sound;
+        if (ImGui::Checkbox("Keep both networks", &keep)) {
+            config.int4_keep_both = keep;
+            if (!config_path.empty()) config.save(config_path);
+        }
+        help_marker("Keep the other network in memory after a switch, so switching back is instant (more VRAM).");
+        if (ImGui::Checkbox("Sound on switch", &sound)) {
+            config.int4_sound = sound;
+            if (!config_path.empty()) config.save(config_path);
+        }
+        if (!config.int4_hotkey.empty()) ImGui::TextDisabled("Hotkey: %s", config.int4_hotkey.c_str());
+        ImGui::TreePop();
+    }
+#endif
 
     if (ImGui::TreeNodeEx("Preprocess", 0)) {
         auto& p = config.preprocess.values;
@@ -1131,14 +1385,20 @@ void draw_overlay(effect_runtime*) {
         ImGui::TreePop();
     }
 
+    // [RenoDX] Enabled while the option is off (it is switched by restarting the game).
+    if (!renodx_on && ImGui::CollapsingHeader("RenoDX style")) {
+        RenoDXAccess access{config.renodx};
+        changed |= nr::control_ui::draw_renodx(access, nr::control_ui::Route::kReShade, false);
+    }
+
     if (changed) {
         config.resolve();
         if (!config_path.empty()) config.save(config_path);
         if (session) {
-            session->set_history_strength(config.history);
-            session->set_model_scale(config.model_scale);
+            session->set_history_strength(renodx_on ? 1.0f : config.history);
+            session->set_model_scale(renodx_on ? 1.0f : config.model_scale);
             session->set_white_point(config.white_point);
-            session->set_max_passes(uint32_t(c.passes));
+            session->set_max_passes(renodx_on ? 1u : uint32_t(c.passes));
         }
     }
     ImGui::Separator();
@@ -1158,6 +1418,11 @@ void draw_overlay(effect_runtime*) {
 
 // Two seconds of "Preprocess: ON/OFF" in the corner after it switches, menu open or not. Drawn by
 // ReShade on the finished picture, so nothing processes it.
+void on_reshade_present(effect_runtime* rt) {
+    std::lock_guard<std::mutex> guard(lock);
+    if (rt == bound) ++presents;
+}
+
 void on_reshade_overlay(effect_runtime*) {
     std::lock_guard<std::mutex> guard(lock);
     // After an int4 mixed switch (hotkey, menu or ini): the build's progress, then the running network for 3 s.
@@ -1202,7 +1467,8 @@ void on_render_technique(effect_runtime* rt, effect_technique t, command_list* c
                          resource_view rtv, resource_view /*rtv_srgb*/) {
     std::lock_guard<std::mutex> guard(lock);
     const nr::Controls& controls = settings();
-    if (!controls.enabled) return;
+    // With the RenoDX-style option NR's switch is [RenoDX] NeuralUplift ([DlssNr]'s does not apply).
+    if (!controls.enabled && !renodx_on) return;
     if (!bound) { bound = rt; resolve(rt); }
     if (rt != bound) return;
     if (technique.handle == 0) {
@@ -1237,6 +1503,8 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
             nr::pe::configure_network(folder);
             log("[nr] settings file %s: enabled=%d intensity=%.2f history=%.2f", config_path.c_str(),
                 int(config.controls.enabled), config.controls.intensity, config.history);
+            renodx_on = config.renodx.enabled;
+            if (renodx_on) log("[nr] RenoDX-style option on ([RenoDX] Enabled = 1 at start)");
         }
         // ReShade as a Vulkan layer loads add-ons inside its vkCreateInstance
         // hook: vulkan-1.dll is in the process and the game's vkCreateDevice
@@ -1260,6 +1528,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         reshade::register_event<reshade::addon_event::destroy_effect_runtime>(on_destroy_effect_runtime);
         reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(on_reloaded_effects);
         reshade::register_event<reshade::addon_event::reshade_render_technique>(on_render_technique);
+        reshade::register_event<reshade::addon_event::reshade_present>(on_reshade_present);
         reshade::register_event<reshade::addon_event::destroy_device>(on_destroy_device);
         reshade::register_overlay(nullptr, draw_overlay);
         reshade::register_event<reshade::addon_event::reshade_overlay>(on_reshade_overlay);
@@ -1285,6 +1554,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         reshade::unregister_event<reshade::addon_event::destroy_effect_runtime>(on_destroy_effect_runtime);
         reshade::unregister_event<reshade::addon_event::reshade_reloaded_effects>(on_reloaded_effects);
         reshade::unregister_event<reshade::addon_event::reshade_render_technique>(on_render_technique);
+        reshade::unregister_event<reshade::addon_event::reshade_present>(on_reshade_present);
         reshade::unregister_event<reshade::addon_event::destroy_device>(on_destroy_device);
         reshade::unregister_addon(module);
     }

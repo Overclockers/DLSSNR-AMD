@@ -1,5 +1,6 @@
 #pragma once
 #include "nr_runtime.hpp"
+#include "nr_renodx.hpp"
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -30,6 +31,58 @@ struct PreprocessConfig {
 bool parse_preprocess_key(PreprocessConfig& p, const std::string& key, const std::string& value);
 // The section, with its comments, as the file holds it.
 void write_preprocess(FILE* f, const PreprocessConfig& p);
+#if NR_INT4
+// [Int4Mixed], with its comments.
+void write_int4mixed(FILE* f, bool enabled, const std::string& hotkey, bool keep_both, bool sound);
+#endif
+// [RenoDX] in dlssnr-amd.ini, every route: the RenoDX-style processing around the network (nr_renodx.hpp).
+// Off by default. The keys other than Enabled are RenoDX's own, with its defaults and ranges (a value
+// outside its range falls back to the default, as RenoDX does).
+struct RenoDXConfig {
+    bool enabled = false;
+    renodx::Settings values{};
+    std::string toggle_key = "F6";   // NRToggleKey: NR on / off in game for this run (NeuralUplift); empty: none
+    // RenoDX's NR screenshot (nr_screenshot.hpp)
+    std::string screenshot_key = "F5";   // NRScreenshotKey; empty: none
+    uint32_t screenshot_source = 0;      // NRScreenshotSource: 0 automatic, 1 the final picture, 2 the model's input / output
+    uint32_t screenshot_format = 0;      // NRScreenshotFormat: 0 PNG, 1 JPEG, 2 both
+    uint32_t screenshot_layout = 0;      // NRScreenshotLayout: 0 the pair, 1 and a side-by-side file
+    uint32_t screenshot_jpeg_quality = 95;
+    uint32_t screenshot_max_mb = 10;
+};
+bool parse_renodx_key(RenoDXConfig& r, const std::string& key, const std::string& value);
+// The field behind nr_renodx_keys.hpp's key `index` (bool, uint32_t, float or std::string by its kind).
+void* renodx_field(RenoDXConfig& r, int index);
+void write_renodx(FILE* f, const RenoDXConfig& r);
+// The [RenoDX] section of `path` alone. False when the file could not be opened (`out` untouched).
+bool read_renodx(const std::string& path, RenoDXConfig& out);
+// [RenoDX] NeuralUplift as a frame sees it: the file's, until NRToggleKey flips it for this run (never written
+// back); a change of NeuralUplift in the file wins again.
+class NrToggle {
+  public:
+    bool frame(const RenoDXConfig& file);
+  private:
+    std::string key_text_;
+    int vk_ = 0, mods_ = 0;
+    bool down_ = false, have_override_ = false, override_ = false, file_on_ = true, logged_ = false, last_ = true;
+};
+// NRScreenshotKey: true on the frame the key goes down (the game's window in front).
+class KeyPress {
+  public:
+    bool frame(const std::string& key_text);
+  private:
+    std::string key_text_;
+    int vk_ = 0, mods_ = 0;
+    bool down_ = false;
+};
+// The section as a frame sees it: re-read when the file changed, looked at about once a second.
+class RenoDXFile {
+  public:
+    // False when nothing changed since the last call.
+    bool poll(const std::string& path, RenoDXConfig& out);
+  private:
+    uint64_t stamp_ = 0, checked_ms_ = 0;
+};
 // [Log], with its comments (read by nr_pe_log.cpp; every route's file carries it).
 void write_log(FILE* f, bool enabled, bool clear);
 // [Network], with its comments: ACO Mode, the network's machine code (nr_pipeline_binary.hpp). Read once per
@@ -70,6 +123,35 @@ class PreprocessSwitch {
     Preprocess last_{};
 };
 
+#if NR_INT4
+// [Int4Mixed] in game, every route: which network the next build should be. Starts from DLSSNR_INT4 when set, else
+// from the file's Enabled; the Hotkey flips it for this run (never written back), and so does a change of Enabled in
+// the file (its write time is checked about once a second, the file re-read when it changed: Enabled, Hotkey,
+// KeepBoth). With Enabled = 0 and no Hotkey at start, this switch stays disabled for the run.
+class Int4Switch {
+  public:
+    // 0 the default network, 1 int4 mixed. `ini`: the game's dlssnr-amd.ini.
+    int frame(const std::string& ini);
+    // KeepBoth: keep the other network resident after a switch (else it is freed once the new one is in).
+    bool keep_both() const { return keep_both_; }
+    // The int4 mixed network could not be built in this run (the runtime logged why): the default network from now on, no hotkey.
+    void unavailable();
+    // From a host's UI: as the hotkey, and the caller writes Enabled = on to the file (so re-reading it is no switch).
+    void set(bool on);
+    bool is_off() const { return off_; }
+  private:
+    int want_ = -1;
+    bool keep_both_ = false, sound_ = true;
+    std::string key_text_;
+    int vk_ = 0, mods_ = 0;
+    bool down_ = false;
+    bool file_on_ = true;   // the file's Enabled as last read
+    uint64_t checked_ms_ = 0, stamp_ = 0;
+    // Enabled = 0 and no Hotkey at start: stop polling the file and keys for this run.
+    bool off_ = false;
+};
+
+#endif
 // The ReShade add-on's settings, dlssnr-amd.ini next to it. Section [DlssNr]
 // with OptiScaler DLSS-NR's key names (ranges as the file's comments say), plus
 // ClassicScaler, History and WhitePoint, which are this project's.
@@ -80,7 +162,14 @@ struct Config {
     float model_scale = 1.0f;     // WorkingScale, 0.25..1
     float history = 1.0f;         // previous-frame blend in the post block, 0..1
     float white_point = 1.0f;     // linear-light input only
+#if NR_INT4
+    bool int4 = true;             // [Int4Mixed] Enabled: the int4 mixed network at start (no Enabled: on, nr_ini_int4.hpp)
+    std::string int4_hotkey = "Ctrl+F11";   // [Int4Mixed] Hotkey: switch int4 mixed / the default network in game; empty: none
+    bool int4_keep_both = false;            // [Int4Mixed] KeepBoth
+    bool int4_sound = true;                 // [Int4Mixed] Sound
+#endif
     PreprocessConfig preprocess{};   // [Preprocess]; controls.preprocess is the frame's, see PreprocessSwitch
+    RenoDXConfig renodx{};           // [RenoDX]
     bool log_enabled = true;         // [Log] Enabled, read by the log itself at start (nr_pe_log.cpp)
     bool log_clear = true;           // [Log] ClearOnStart
     bool aco = false;                // [Network] ACO Mode, read by configure_network at start (kept on save)
