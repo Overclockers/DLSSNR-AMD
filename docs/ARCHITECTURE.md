@@ -5,7 +5,7 @@ code is. For installing and using it, see the [README](../README.md).
 
 ## The network
 
-The NR network of DLSS 5 (`nvngx_dlssnr.dll`: the 310.9.16 new model, the Linux default, and the 310.8.0
+The NR network of DLSS 5 (`nvngx_dlssnr.dll`: the 310.9.16 new model, the default, and the 310.8.0
 old model, which 310.9.16 also contains) is reimplemented as Vulkan compute shaders in GLSL. Both models
 use the same layer types and the same shaders; they differ in the layer table and the weights. The
 shaders do FP8 matrix multiplication through `VK_KHR_cooperative_matrix` and `VK_EXT_shader_float8`,

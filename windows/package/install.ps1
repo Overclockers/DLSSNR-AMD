@@ -2,7 +2,12 @@
 #
 #   install.bat                      a window asks for the game's exe, then for the route
 #   install.bat <game exe or its folder> [optiscaler|reshade-feeder|reshade-feeder-dx9|reshade-feeder-vulkan|remove|logs]
-#               [-Dll <nvngx_dlssnr.dll or its zip>] [-Network default|aco|aco-int4-mixed] [-RenoDX on|off]
+#               [-Dll <nvngx_dlssnr.dll or its zip>] [-Model new|old] [-Network default|aco|aco-int4-mixed] [-RenoDX on|off]
+#
+# Model (asked first, -Model new|old; [Network] Model in dlssnr-amd.ini, small = new, original = old): the new model is
+# the default model of NVIDIA's 310.9.16 (faster), the old one the model of 310.8.0. Every model the package has is
+# installed; the choice only sets [Network] Model (change it in the ini later, applied after a game restart). int4 mixed
+# exists for the old model only: with the new model it is not offered, and aco-int4-mixed sets the old model.
 #
 # Network (chosen at install, written to [Network] ACO Mode and [Int4Mixed] Enabled in dlssnr-amd.ini): default = 0 / 0,
 # aco = 1 / 0, aco-int4-mixed = 1 / 1 (int4 mixed runs with ACO's machine code only). int4 mixed is always installed
@@ -12,15 +17,16 @@
 # is processed the way RenoDX's DLSS5 add-on does it, and every NR setting moves to [RenoDX] (on the OptiScaler route in
 # the NR Control menu, on the ReShade routes on the Add-ons page).
 #
-# The package carries no model: on the first install the user gives NVIDIA's nvngx_dlssnr.dll (310.8.0)
-# or a zip that contains it, and model-tools\dlssnr_extract_model.exe makes dlssnr.bin from it (it only
-# reads the weight data; the DLL is never loaded or run). The model is kept in the package's dlssnr-amd\,
-# so later installs from this package need no DLL.
+# The package carries no model: on the first install the user gives NVIDIA's nvngx_dlssnr.dll (310.9.16 or
+# 310.8.0) or a zip that contains it, and model-tools\dlssnr_extract_model.exe makes the model files from it:
+# from 310.9.16 dlssnr.bin (the old model, which 310.9.16 also holds) and dlssnr-small.bin (the new model), from
+# 310.8.0 dlssnr.bin only. It only reads the weight data; the DLL is never loaded or run. The models are kept in
+# the package's dlssnr-amd\, so later installs from this package need no DLL.
 #
 # Every file put into the game folder is listed in dlssnr-amd-install.txt; existing files it would
 # overwrite are first moved to dlssnr-amd-backup\, and uninstall deletes ours and puts them back.
-param([string]$Target = '', [string]$Route = '', [string]$Dll = '', [string]$Network = '', [string]$RenoDX = '',
-      [switch]$Pause)
+param([string]$Target = '', [string]$Route = '', [string]$Dll = '', [string]$Model = '', [string]$Network = '',
+      [string]$RenoDX = '', [switch]$Pause)
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -89,6 +95,25 @@ if ('optiscaler', 'reshade-feeder', 'reshade-feeder-dx9', 'reshade-feeder-vulkan
     Fail "Unknown route: $Route"
 }
 
+# ---- choose the model ------------------------------------------------------------------------
+if ($Route -ne 'remove' -and $Route -ne 'logs' -and -not $Model) {
+    if ($Network -eq 'aco-int4-mixed') { $Model = 'old' }   # int4 mixed exists for the old model only
+    else {
+        Say ''
+        Say 'Model: NVIDIA 310.9.16 brings a new model, faster than the old one (310.8.0).'
+        Say '  Y: the new model (default). int4 mixed exists for the old model only and is not offered with the new one.'
+        Say '  n: the old model; int4 mixed is offered in the next question.'
+        Say '  Later: [Network] Model in dlssnr-amd.ini (small = new model, original = old model), applied after a game restart.'
+        $pick = Read-Host 'Use the new model? [Y/n]'
+        $Model = if ($pick -eq 'n' -or $pick -eq 'N') { 'old' } else { 'new' }
+    }
+}
+if (-not $Model) { $Model = 'new' }
+if ('new', 'old' -notcontains $Model) { Fail "Unknown model: $Model (new or old)" }
+if ($Model -eq 'new' -and $Network -eq 'aco-int4-mixed') {
+    Fail 'int4 mixed exists for the old model only; -Model new and -Network aco-int4-mixed cannot be used together.'
+}
+
 # ---- choose the network ----------------------------------------------------------------------
 $haveInt4 = Test-Path -LiteralPath (Join-Path $here 'dlssnr-amd\int4') -PathType Container
 if ($Route -ne 'remove' -and $Route -ne 'logs' -and -not $Network) {
@@ -97,7 +122,7 @@ if ($Route -ne 'remove' -and $Route -ne 'logs' -and -not $Network) {
     Say '  1) default network, compiled by the AMD driver   ACO Mode = 0, Int4Mixed Enabled = 0 (default)'
     Say '  2) default network, ACO machine code             ACO Mode = 1, Int4Mixed Enabled = 0'
     $menu = @('default', 'aco')
-    if ($haveInt4) {
+    if ($haveInt4 -and $Model -eq 'old') {
         Say '  3) int4 mixed, ACO machine code                  ACO Mode = 1, Int4Mixed Enabled = 1'
         $menu += 'aco-int4-mixed'
         Say 'int4 mixed: part of the network runs in int4 and other lower precisions; faster, the picture differs somewhat.'
@@ -140,7 +165,7 @@ if ($Route -ne 'logs') {
         $me = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
         if ($me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { Fail "Cannot write to $game" }
         Say 'This folder needs administrator rights, asking for them...'
-        $elevated = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`" -Target `"$game`" -Route $Route -Network $Network -RenoDX $RenoDX -Pause"
+        $elevated = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`" -Target `"$game`" -Route $Route -Model $Model -Network $Network -RenoDX $RenoDX -Pause"
         if ($Dll) { $elevated += " -Dll `"$Dll`"" }
         $p = Start-Process powershell -Verb RunAs -ArgumentList $elevated -PassThru -Wait
         exit $p.ExitCode
@@ -261,19 +286,24 @@ if ($Route -eq 'remove') { Remove-Installed; Finish 0 }
 $bits = Get-ExeBits $exe
 if ($bits -eq 32) { Fail "This is a 32-bit game ($exe); this package supports 64-bit games only." }
 # ---- model -----------------------------------------------------------------------------------
-# The package's dlssnr-amd\dlssnr.bin, or one extracted now from the user's nvngx_dlssnr.dll. Its SHA256
-# has to be the tested model's.
+# The package's models, or ones extracted now from the user's nvngx_dlssnr.dll; checked by SHA256.
+# dlssnr.bin = the old model (310.8.0, also in 310.9.16), dlssnr-small.bin = the new model (310.9.16's default).
 $ModelSha = '2B41C888CF4155B8958C665BA64018AB0BD25C85FC71A2B6DB86D0D04D1F7FBD'
-$model = Join-Path $here 'dlssnr-amd\dlssnr.bin'
-$modelFrom = $model
-if (-not (Test-Path -LiteralPath $model)) {
+$SmallSha = '7E966E2639DBEC6596AA0BAC3B8761137D2C40CA8CB4ACA30DF7CA10043C6E33'
+function Test-Sha([string]$path, [string]$sha) {
+    (Test-Path -LiteralPath $path -PathType Leaf) -and (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -eq $sha
+}
+$modelPath = Join-Path $here 'dlssnr-amd\dlssnr.bin'
+$smallPath = Join-Path $here 'dlssnr-amd\dlssnr-small.bin'
+$modelFrom = $modelPath; $smallFrom = $smallPath
+if (($Dll -and -not ((Test-Sha $modelPath $ModelSha) -and (Test-Sha $smallPath $SmallSha))) -or -not (Test-Path -LiteralPath $modelPath)) {
     if (-not $Dll) {
         Say ''
-        Say 'The package has no model. The first install needs NVIDIA''s nvngx_dlssnr.dll (version 310.8.0), or a zip that contains it.'
-        Say 'Only its weight data is read; it is never loaded or run. The model is kept in this package, so later installs do not ask again.'
+        Say 'The package has no model. The first install needs NVIDIA''s nvngx_dlssnr.dll (310.9.16 - both models - or 310.8.0), or a zip that contains it.'
+        Say 'Only its weight data is read; it is never loaded or run. The models are kept in this package, so later installs do not ask again.'
         Add-Type -AssemblyName System.Windows.Forms
         $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Choose nvngx_dlssnr.dll (310.8.0) or a zip that contains it'
+        $dialog.Title = 'Choose nvngx_dlssnr.dll (310.9.16 or 310.8.0) or a zip that contains it'
         $dialog.Filter = 'nvngx_dlssnr.dll or zip (*.dll;*.zip)|*.dll;*.zip'
         if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { Fail 'No nvngx_dlssnr.dll chosen; cannot install.' }
         $Dll = $dialog.FileName
@@ -292,24 +322,45 @@ if (-not (Test-Path -LiteralPath $model)) {
             $src = $found[0].FullName
         }
         Say 'Extracting the model ...'
-        $tmpModel = Join-Path $work 'dlssnr.bin'
-        & (Join-Path $here 'model-tools\dlssnr_extract_model.exe') $src $tmpModel
+        $out = Join-Path $work 'out'
+        New-Item -ItemType Directory -Path $out | Out-Null
+        & (Join-Path $here 'model-tools\dlssnr_extract_model.exe') $src $out
+        $tmpModel = Join-Path $out 'dlssnr.bin'; $tmpSmall = Join-Path $out 'dlssnr-small.bin'
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $tmpModel)) { Fail 'Extracting the model failed (see above).' }
+        if (-not (Test-Sha $tmpModel $ModelSha)) { Fail 'The extracted model has the wrong checksum; nothing was installed.' }
+        $pairs = @(,@($tmpModel, $modelPath))
+        if (Test-Path -LiteralPath $tmpSmall) {
+            if (-not (Test-Sha $tmpSmall $SmallSha)) { Fail 'The extracted new model has the wrong checksum; nothing was installed.' }
+            $pairs += ,@($tmpSmall, $smallPath)
+        }
         try {
-            Copy-Item -LiteralPath $tmpModel -Destination $model -Force
-            Say "The model is kept in $model; later installs from this package need no DLL."
+            foreach ($p in $pairs) { Copy-Item -LiteralPath $p[0] -Destination $p[1] -Force }
+            Say "The model is kept in $(Join-Path $here 'dlssnr-amd'); later installs from this package need no DLL."
         } catch {
-            # The package folder is not writable: install from the temporary copy; the next install asks again.
+            # The package folder is not writable: install from temporary copies; the next install asks again.
+            foreach ($p in $pairs) { Remove-Item -LiteralPath $p[1] -Force -ErrorAction SilentlyContinue }
             $modelFrom = Join-Path $env:TEMP 'dlssnr-amd-model.bin'
             Copy-Item -LiteralPath $tmpModel -Destination $modelFrom -Force
+            if (Test-Path -LiteralPath $tmpSmall) {
+                $smallFrom = Join-Path $env:TEMP 'dlssnr-amd-model-small.bin'
+                Copy-Item -LiteralPath $tmpSmall -Destination $smallFrom -Force
+            }
             Say 'Note: the model could not be kept in the package folder (not writable?); the next install needs the DLL again.'
         }
     } finally {
         Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-if ((Get-FileHash -LiteralPath $modelFrom -Algorithm SHA256).Hash -ne $ModelSha) {
+if (-not (Test-Sha $modelFrom $ModelSha)) {
     Fail "$modelFrom is damaged or not this version's model. Delete it and install again with nvngx_dlssnr.dll."
+}
+if ((Test-Path -LiteralPath $smallPath) -and -not (Test-Sha $smallPath $SmallSha)) {
+    Fail "$smallPath is damaged or not this version's model. Delete it or install again with nvngx_dlssnr.dll."
+}
+$haveSmall = Test-Sha $smallFrom $SmallSha
+if (-not $haveSmall) {
+    Say "Note: the package has no new model (dlssnr-small.bin); only the old model was installed.$(if ($Model -eq 'new') { ' The game runs the old model for now (dlssnr-amd.log says why).' })"
+    Say 'To add the new model, install again with -Dll pointing at the 310.9.16 nvngx_dlssnr.dll or its zip.'
 }
 # int4 mixed's weights: made from this model with the package's data, checked against the tested result.
 $int4ModelFrom = $null
@@ -334,7 +385,8 @@ if (Test-Path -LiteralPath $manifest) { Say 'Found a previous installation, remo
 
 Set-Content -LiteralPath $manifest -Value "F $ManifestName" -Encoding UTF8
 Put-Tree (Join-Path $here 'dlssnr-amd') 'dlssnr-amd'
-if ($modelFrom -ne $model) { Copy-Item -LiteralPath $modelFrom -Destination (Join-Path $game 'dlssnr-amd\dlssnr.bin') -Force }
+if ($modelFrom -ne $modelPath) { Copy-Item -LiteralPath $modelFrom -Destination (Join-Path $game 'dlssnr-amd\dlssnr.bin') -Force }
+if ($haveSmall -and $smallFrom -ne $smallPath) { Copy-Item -LiteralPath $smallFrom -Destination (Join-Path $game 'dlssnr-amd\dlssnr-small.bin') -Force }
 if ($int4ModelFrom) {
     try { Put-File $int4ModelFrom 'dlssnr-amd\dlssnr-int4.bin' }
     finally { Remove-Item -LiteralPath $int4ModelFrom -Force -ErrorAction SilentlyContinue }
@@ -436,13 +488,24 @@ if ($Route -ne 'optiscaler' -and $RenoDX -eq 'on') {
     }
     [System.IO.File]::WriteAllText($iniDst, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 }
+if ($Model -eq 'old') {
+    # the old model: Model = original in the [Network] section (int4 mixed's ini has it already)
+    $lines = [System.IO.File]::ReadAllLines($iniDst, [System.Text.Encoding]::UTF8)
+    $inNetwork = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\[') { $inNetwork = $lines[$i] -eq '[Network]' }
+        elseif ($inNetwork -and $lines[$i] -eq 'Model = small') { $lines[$i] = 'Model = original' }
+    }
+    [System.IO.File]::WriteAllText($iniDst, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
 Record-Logs @('dlssnr-amd.ini')
 
 Say ''
 Say "Installed into: $game$(if ($RenoDX -eq 'on') { ' (RenoDX style)' })"
+Say "Model: $(if ($Model -eq 'new') { 'the new model (310.9.16)' } else { 'the old model (310.8.0)' }); switch it with [Network] Model in dlssnr-amd.ini, applied after a game restart."
 $aco = if ($Network -eq 'aco' -or $Network -eq 'aco-int4-mixed') { 1 } else { 0 }
 Say "Network: ACO Mode = $aco ([Network] in dlssnr-amd.ini; a change takes effect after a game restart)"
-if ($int4ModelFrom) {
+if ($int4ModelFrom -and $Model -eq 'old') {
     $i4 = if ($Network -eq 'aco-int4-mixed') { 1 } else { 0 }
     Say "int4 mixed: Enabled = $i4 ([Int4Mixed] in dlssnr-amd.ini). Ctrl+F11 in game switches between int4 mixed and the default network."
     if ($aco -eq 0) { Say 'Switching to int4 mixed with Ctrl+F11 needs ACO Mode = 1.' }
@@ -455,7 +518,7 @@ if ($Route -eq 'optiscaler') {
         Say 'the NR settings are on the DLSS Neural Rendering page.'
     }
     Say 'If colours turn green or grainy after NR (007 First Light, for example), try [Preprocess] in dlssnr-amd.ini, or press Ctrl+F10 in the game.'
-    Say "End opens NR Control (this project's NR menu: int4 mixed, Preprocess$(if ($RenoDX -eq 'on') { ', and every NR setting of the RenoDX style' }))."
+    Say "End opens NR Control (this project's NR menu: $(if ($Model -eq 'old') { 'int4 mixed, ' })Preprocess$(if ($RenoDX -eq 'on') { ', and every NR setting of the RenoDX style' }))."
     if ($RenoDX -eq 'on') {
         Say 'The RenoDX style is on ([RenoDX] Enabled = 1 in dlssnr-amd.ini). With it on, every NR setting is in NR Control ([RenoDX]);'
         Say 'the OptiScaler menu only handles upscaling and frame generation, and its NR page has no effect. Turning the RenoDX style off'

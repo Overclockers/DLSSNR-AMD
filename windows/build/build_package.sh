@@ -10,10 +10,11 @@
 #   vulkan/         the Khronos loader the Vulkan-layer routes put beside the game
 #   install.bat, install.ps1, README.txt
 #
-#   [NR_MODEL=dlssnr.bin] [NR_INT4=0] bash windows/build/build_package.sh [build dir]
+#   [NR_MODEL=dlssnr.bin [NR_MODEL_SMALL=dlssnr-small.bin]] [NR_INT4=0] bash windows/build/build_package.sh [build dir]
 #
 # The package carries no model: install.ps1 extracts it from the user's nvngx_dlssnr.dll on the first
-# install. NR_MODEL puts a dlssnr.bin you made yourself into the package (for your own use only).
+# install. NR_MODEL puts a dlssnr.bin you made yourself into the package (for your own use only), and with it
+# NR_MODEL_SMALL a dlssnr-small.bin (the new model, from the 310.9.16 DLL).
 #
 # NR_INT4 (default 1): the programs built with int4 mixed and its data in the package; install.ps1 asks which
 # network to install (ACO Mode, int4 mixed on or off; int4 mixed runs with ACO Mode = 1). NR_INT4=0: the default
@@ -27,6 +28,11 @@ model=""
 if [[ -n "${NR_MODEL:-}" ]]; then
     [[ -f "$NR_MODEL" ]] || { echo "NR_MODEL: no such file: $NR_MODEL" >&2; exit 1; }
     model=$(realpath -- "$NR_MODEL")
+fi
+small=""
+if [[ -n "$model" && -n "${NR_MODEL_SMALL:-}" ]]; then
+    [[ -f "$NR_MODEL_SMALL" ]] || { echo "NR_MODEL_SMALL: no such file: $NR_MODEL_SMALL" >&2; exit 1; }
+    small=$(realpath -- "$NR_MODEL_SMALL")
 fi
 cd -- "$(dirname -- "$0")/../.."
 out=$(realpath -m -- "${1:-artifacts/windows/package-build}")
@@ -118,7 +124,7 @@ bash windows/build/build_vulkan_loader.sh > /dev/null
 pkg="$out/package"
 rm -rf -- "$pkg"; mkdir -p -- "$pkg"
 if [[ -n "$model" ]]; then
-    bash windows/build/assemble_product_data.sh "$pkg" --model "$model"
+    bash windows/build/assemble_product_data.sh "$pkg" --model "$model" ${small:+--small-model "$small"}
 else
     bash windows/build/assemble_product_data.sh "$pkg"
 fi

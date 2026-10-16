@@ -6,9 +6,9 @@ graphics cards.
 - The network is reimplemented as Vulkan compute shaders.
 - The model is not included. The installer extracts it from your own copy of `nvngx_dlssnr.dll`.
   Version 310.9.16 holds two models: the 310.9.16 new model, its default and faster, and the 310.8.0 old
-  model, so from 310.9.16 alone the installer installs both. Since 0.0.6-linux-preview the Linux version
-  runs the 310.9.16 new model by default; the 310.8.0 old model stays selectable (see
-  [The model](#the-model)). The Windows version still runs the 310.8.0 old model only.
+  model, so from 310.9.16 alone the installer installs both. Since 0.0.6-linux-preview (Linux) and
+  0.0.6-win-preview-alpha (Windows) the 310.9.16 new model runs by default; the 310.8.0 old model stays selectable
+  (see [The model](#the-model)).
 - The Linux build with the 310.9.16 new model, on an RX 9070 XT, checked against NVIDIA's own `nvngx_dlssnr.dll`
   310.9.16 run on an RTX 5090 through NGX, the same way as below. Single frames: PSNR 49.15 dB at 1080p,
   49.40 dB at 1440p and 50.59 dB at 4K, SSIM 0.997. Moving sequences: PSNR 50.6-52.3 dB at 1080p,
@@ -75,12 +75,16 @@ instructions the network needs.
 
 ## Performance
 
-310.9.16 new model (Linux, v0.0.6-linux-preview), GPU time of the network per frame on an RX 9070 XT,
-**measured in game** (network only):
+310.9.16 new model, GPU time of the network per frame on an RX 9070 XT (network only). Linux
+(v0.0.6-linux-preview) **measured in game**; Windows with the driver's own compiler from
+[#13](https://github.com/mochizuki0323/DLSSNR-AMD/pull/13); Windows with ACO Mode not measured (it runs the same
+machine code as Linux):
 
 | | 1080p | 1440p | 4K |
 | --- | --- | --- | --- |
 | Linux, 310.9.16 new model | 3.27 ms | 5.53 ms | 12.67 ms |
+| Windows, 310.9.16 new model | 4.673 ms | 7.982 ms | 16.940 ms |
+| Windows, 310.9.16 new model, [ACO Mode](#windows-experimental-preview) On | about the same as Linux | about the same as Linux | about the same as Linux |
 
 310.8.0 old model, GPU time of the network per frame on an RX 9070 XT, **offline benchmark** (network
 only), measured with v0.0.3 (the int4 mixed row with v0.0.4, the Windows ACO Mode row with v0.0.4-win-preview
@@ -203,7 +207,7 @@ The file itself explains every setting.
 A second network, faster than the default one (see Performance): part of its computation runs in int4,
 a lower precision than the original network uses, so its picture differs somewhat from the default
 network's. It exists for the 310.8.0 old model only. Both Linux packages and the Windows package have it; it
-is chosen at install (on Linux after choosing the 310.8.0 old model).
+is chosen at install (after choosing the 310.8.0 old model).
 
 On Windows it is choice 3 of the installer's network question (`-Network aco-int4-mixed`) and runs with
 [ACO Mode](#windows-experimental-preview) only: the AMD driver's own compiler makes slow code for the
@@ -262,23 +266,24 @@ the extracted model is kept and reused for every later one. Needs `bash` and `py
 
 Download `DLSSNR-AMD-Vulkan-Windows-*-preview-x86_64.zip` from the releases, unpack it and double-click
 `install.bat`. Pick the game's exe (the one that actually runs, not a launcher), then the route, the
-network (the default network compiled by the AMD driver, the default network as ACO machine code, or
-[int4 mixed](#int4-mixed-optional)) and whether to use the [RenoDX style](#renodx-style-optional). The
-first install asks for `nvngx_dlssnr.dll` 310.8.0 or a zip that contains it and extracts the model
-(below); later installs from the same package do not ask again. Read
+model (the 310.9.16 new model or the 310.8.0 old model), the network (the default network compiled by the AMD
+driver, the default network as ACO machine code, or, with the 310.8.0 old model, [int4 mixed](#int4-mixed-optional))
+and whether to use the [RenoDX style](#renodx-style-optional). The first install asks for `nvngx_dlssnr.dll`
+(310.9.16 or 310.8.0) or a zip that contains it and extracts the models (below); later installs from the same
+package do not ask again. Read
 [windows/package/README.txt](windows/package/README.txt) and [Windows](#windows-experimental-preview)
 first.
 
 ## The model
 
 The weights are NVIDIA's and are not part of this project. They are extracted from your own copy of
-`nvngx_dlssnr.dll`. Linux takes **version 310.9.16** or **310.8.0**. 310.9.16 already contains the 310.8.0
+`nvngx_dlssnr.dll`, **version 310.9.16** or **310.8.0**. 310.9.16 already contains the 310.8.0
 model, so with it both models are extracted and installed; 310.8.0 gives the 310.8.0 old model only. Use
-310.9.16 when you can. Windows takes 310.8.0 only.
+310.9.16 when you can.
 
 | File | Model |
 | --- | --- |
-| `dlssnr-amd/dlssnr-small.bin` | the 310.9.16 new model (310.9.16's default, faster); Linux default |
+| `dlssnr-amd/dlssnr-small.bin` | the 310.9.16 new model (310.9.16's default, faster); the default |
 | `dlssnr-amd/dlssnr.bin` | the 310.8.0 old model (310.9.16 has it too) |
 
 - Input: the DLL itself, or a zip that contains exactly one `nvngx_dlssnr.dll` (it may be in a
@@ -289,11 +294,11 @@ model, so with it both models are extracted and installed; 310.8.0 gives the 310
   seconds for 310.8.0, and needs `bash` and `python3`. The Windows package does the same with
   `model-tools\dlssnr_extract_model.exe` (no Python needed), in about a second.
 - The extracted models are kept in the package's own `dlssnr-amd/`. Later installs from that package
-  without `--dll` check their SHA256 and install them from there, so the extraction runs only once per
+  without `--dll` (`-Dll` on Windows) check their SHA256 and install them from there, so the extraction runs only once per
   package. With a new package, use `--dll` once more or copy those files over.
 - Every model the package has is installed. Which one runs is `[Network] Model` in `dlssnr-amd.ini`
   (`small` = the 310.9.16 new model, `original` = the 310.8.0 old model), set at install
-  (`--new-model` / `--old-model`, or the installer's question) and changeable afterwards; it takes effect
+  (`--new-model` / `--old-model`, on Windows `-Model new` / `old`, or the installer's question) and changeable afterwards; it takes effect
   after a game restart. If the 310.9.16 new model is chosen but not there (a 310.8.0 DLL), the 310.8.0 old
   model runs and the log says why.
 
@@ -314,10 +319,11 @@ On success it prints `599 entries, 140.9 MiB` for `dlssnr.bin` (147,756,560 byte
 On Windows, `install.bat` extracts the model by itself; to run the tool on its own:
 
 ```bat
-model-tools\dlssnr_extract_model.exe nvngx_dlssnr.dll dlssnr.bin
+model-tools\dlssnr_extract_model.exe nvngx_dlssnr.dll <folder>
 ```
 
-It takes the DLL itself; unpack it from the zip first.
+It takes the DLL itself (unpack it from the zip first) and writes `dlssnr.bin`, and from 310.9.16 also
+`dlssnr-small.bin`, into the folder.
 
 ## Windows (experimental preview)
 
@@ -386,7 +392,8 @@ bash windows/build/build_package.sh
 
 The result is `windows/package/DLSSNR-AMD-Vulkan-Windows-*-preview-x86_64.zip`; on Windows, run `install.bat` from it.
 It contains no model; the installer extracts it on the first install. `NR_MODEL=/path/to/dlssnr.bin`
-puts one into the package for your own use. Do not share packages that contain the model.
+(and `NR_MODEL_SMALL=/path/to/dlssnr-small.bin` for the 310.9.16 new model) puts them into the package
+for your own use. Do not share packages that contain the model.
 
 ## Licence
 

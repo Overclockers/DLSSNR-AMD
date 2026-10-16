@@ -4,6 +4,7 @@
 #if NR_INT4
 #include "nr_ini_int4.hpp"
 #endif
+#include "nr_ini_network.hpp"
 #include "nr_pe_log.hpp"
 #include "nr_pipeline_binary.hpp"
 
@@ -181,6 +182,7 @@ bool parse(const std::string& path, Config& c, bool& legacy) {
         }
         if (name == "network") {
             if (key == "aco" || key == "aco mode" || key == "acomode") { if (auto b = parse_bool(value)) c.aco = *b; }
+            else if (key == "model" && network_value(value) >= 0) c.network = lower(value);
             continue;
         }
 #if NR_INT4
@@ -1024,16 +1026,22 @@ void write_log(FILE* f, bool enabled, bool clear) {
         enabled ? 1 : 0, clear ? 1 : 0);
 }
 
-void write_network(FILE* f, bool aco) {
+void write_network(FILE* f, const std::string& model, bool aco) {
     std::fprintf(f,
         "\n[Network]\n"
-        "; Which compiler makes the network's machine code. Takes effect when the game restarts.\n"
+        "; Which model the network runs and which compiler makes its machine code. Takes effect when the game restarts.\n"
+        "\n"
+        "Model = %s\n"
+        "; small    = the new model (the default model of NVIDIA's 310.9.16, faster)\n"
+        "; original = the old model (the model of 310.8.0)\n"
+        "; The new model's weights come from the 310.9.16 nvngx_dlssnr.dll (install.ps1); without them the old model\n"
+        "; runs and dlssnr-amd.log says why. int4 mixed exists for the old model only; with Model = small it is not used.\n"
         "\n"
         "ACO Mode = %d\n"
         "; 0 = the AMD driver's own compiler (default)\n"
         "; 1 = machine code made by the ACO compiler (the one the Linux version uses). When it cannot be used, 0 is\n"
         ";     used instead and dlssnr-amd.log says why\n",
-        aco ? 1 : 0);
+        model.c_str(), aco ? 1 : 0);
 }
 
 void configure_network(const std::string& folder) {
@@ -1096,7 +1104,7 @@ bool PreprocessFile::poll(const std::string& path, PreprocessConfig& out) {
             write_int4mixed(f, true, "Ctrl+F11", false, true);
 #endif
             write_preprocess(f, PreprocessConfig{});
-            write_network(f, false);
+            write_network(f, kDefaultNetwork, false);
             write_renodx(f, RenoDXConfig{});
             write_log(f, true, true);
             std::fclose(f);
@@ -1331,7 +1339,7 @@ void Config::save(const std::string& path) {
     write_int4mixed(f, int4, int4_hotkey, int4_keep_both, int4_sound);
 #endif
     write_preprocess(f, preprocess);
-    write_network(f, aco);
+    write_network(f, network, aco);
     write_renodx(f, renodx);
     write_log(f, log_enabled, log_clear);
     std::fclose(f);

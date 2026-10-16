@@ -40,8 +40,14 @@ on.
 You can also drag the game's exe onto install.bat. Games under Program Files ask for
 administrator rights.
 
-After the route the installer asks for the network, three combinations of two settings in
-dlssnr-amd.ini:
+After the route the installer asks for the model: Enter (or y) = the new model, n = the old model;
+on the command line -Model new or old. Both models are installed whenever the package has them; the
+choice only sets [Network] Model in dlssnr-amd.ini (small = the new model, original = the old model),
+which can be changed later (applied after a game restart). int4 mixed exists for the old model only:
+with the new model the network question below does not offer it. See "Model" below.
+
+Then the installer asks for the network, combinations of two settings in dlssnr-amd.ini (3 only with
+the old model):
 
   1) default network, compiled by the AMD driver   ACO Mode = 0, Int4Mixed Enabled = 0 (default)
   2) default network, ACO machine code             ACO Mode = 1, Int4Mixed Enabled = 0
@@ -63,12 +69,21 @@ off. On the command line: -RenoDX on or off.
 
 Model
 -----
-The package does not contain NVIDIA's model. The first install asks for nvngx_dlssnr.dll
-(version 310.8.0 only) or a zip that contains it. The installer extracts the model with
-model-tools\dlssnr_extract_model.exe (it only reads the weight data; the DLL is never loaded or
-run), checks every entry against known hashes and writes dlssnr-amd\dlssnr.bin only if all
-match. The model stays in this package, so later installs from it (into other games too) do not
-ask again; with a newer package, choose the DLL once more or copy that file over.
+The package does not contain NVIDIA's model. The first install asks for nvngx_dlssnr.dll, version
+310.9.16 or 310.8.0, or a zip that contains it (on the command line: -Dll):
+
+    dlssnr-amd\dlssnr-small.bin  the new model (the default model of 310.9.16, faster), used by default
+    dlssnr-amd\dlssnr.bin        the old model (the model of 310.8.0; 310.9.16 has it too)
+
+Use 310.9.16 when you can: it already contains the old model, so with it both models are extracted
+and installed; 310.8.0 gives the old model only (the game then runs the old model). The installer
+extracts the models with model-tools\dlssnr_extract_model.exe (it only reads the weight data; the
+DLL is never loaded or run), checks every entry against known hashes and writes a model file only
+if all of them match. The models stay in this package, so later installs from it (into other games
+too) do not ask again; to add the new model to a package that has only the old one, install again
+with -Dll pointing at the 310.9.16 DLL. With a newer package, choose the DLL once more or copy those
+files over.
+Both models run with either ACO Mode setting.
 
 Use
 ---

@@ -4,7 +4,8 @@ read out of windows/src/pe/nr_pe_config.cpp, so the two cannot drift): <out>/dls
 [Preprocess], [Network], [RenoDX] and [Log], what the OptiScaler route reads), <out>/dlssnr-amd-optiscaler-renodx.ini (the
 same with [RenoDX] Enabled = 1) and <out>/dlssnr-amd-addon.ini (the ReShade add-on's whole file).
 usage: make_ini.py <nr_pe_config.cpp> <out dir> [--int4 | --int4-off] [--aco]   (--int4 / --int4-off: with [Int4Mixed],
-Enabled = 1 / 0, for an install with int4 mixed; --aco: [Network] ACO Mode = 1)"""
+Enabled = 1 / 0, for an install with int4 mixed; --aco: [Network] ACO Mode = 1. [Network] Model = small, original with
+--int4)"""
 import re, sys
 from pathlib import Path
 
@@ -32,7 +33,10 @@ perf = formats(body_of("void write_int4mixed("))[0] if int4_on or "--int4-off" i
 prep = formats(body_of("void write_preprocess("))[0]
 rdx = formats(body_of("void write_renodx("))[0]
 logsec = formats(body_of("void write_log("))[0] % (1, 1)
-network = formats(body_of("void write_network("))[0] % (1 if "--aco" in sys.argv[3:] else 0,)
+# [Network] Model: the small model; the original one with int4 mixed (it has only that model). install.ps1 writes
+# original for an install that chooses the old model.
+network = formats(body_of("void write_network("))[0] % ("original" if int4_on else "small",
+                                                        1 if "--aco" in sys.argv[3:] else 0)
 save = formats(body_of("void Config::save("))
 assert prep and len(save) == 8, len(save)   # [DlssNr], six Pass<N> lines (none by default), own keys
 

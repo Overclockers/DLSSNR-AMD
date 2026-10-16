@@ -85,9 +85,12 @@ class RenoDXFile {
 };
 // [Log], with its comments (read by nr_pe_log.cpp; every route's file carries it).
 void write_log(FILE* f, bool enabled, bool clear);
-// [Network], with its comments: ACO Mode, the network's machine code (nr_pipeline_binary.hpp). Read once per
-// process by configure_network; every route's file carries it.
-void write_network(FILE* f, bool aco);
+// [Network], with its comments: Model, which model the network runs (nr_ini_network.hpp; the runtime reads it),
+// and ACO Mode, the network's machine code (nr_pipeline_binary.hpp), read once per process by configure_network.
+// Every route's file carries it. The default model: the small one (the installer writes original for the old
+// model and for int4 mixed, which has only that model).
+constexpr const char* kDefaultNetwork = "small";
+void write_network(FILE* f, const std::string& model, bool aco);
 // [Network] ACO Mode of dlssnr-amd.ini in `folder`, handed to nr::binary before the first device is made: on
 // (and the bundle dlssnr-amd/aco present) the network runs ACO's machine code. Logs what it decided.
 void configure_network(const std::string& folder);
@@ -172,6 +175,7 @@ struct Config {
     RenoDXConfig renodx{};           // [RenoDX]
     bool log_enabled = true;         // [Log] Enabled, read by the log itself at start (nr_pe_log.cpp)
     bool log_clear = true;           // [Log] ClearOnStart
+    std::string network = kDefaultNetwork;   // [Network] Model: small or original (read by the runtime, kept on save)
     bool aco = false;                // [Network] ACO Mode, read by configure_network at start (kept on save)
 
     int pass_limit() const { return unlock_passes ? kMaxPasses : 2; }
