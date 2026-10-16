@@ -1,0 +1,1055 @@
+{
+  "dll_sha256": "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f",
+  "resource": "WEIGHTS_CC_SMALL_FP8",
+  "resource_sha256": "f743e8eb320f42bc9bdc992ee2bf51f7bb7c8688ced4ecf5ce6807ec4eef7962",
+  "name": "CCNetwork",
+  "config": "hnet-crazy-cuckoo-small-fp8",
+  "backbone": "crazy-cuckoo",
+  "blocks": [
+    {
+      "index": 0,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_pre_block_swin_1h_32_ds_fp8",
+          "type": "CCTinlayoutFusedPreBlockSwin1H",
+          "input_channels": 3,
+          "output_channels": 32,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_1h_inpview_32_fp8",
+          "type": "CCTinlayoutFusedSwin1H",
+          "input_channels": 32,
+          "output_channels": 32,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_1h_ds_shifted_32_fp8",
+          "type": "CCTinlayoutFusedSwin1H",
+          "input_channels": 32,
+          "output_channels": 64,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_2h_inpview_64_fp8",
+          "type": "CCTinlayoutFusedSwin2H",
+          "input_channels": 64,
+          "output_channels": 64,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_2h_ds_shifted_64_fp8",
+          "type": "CCTinlayoutFusedSwin2H",
+          "input_channels": 64,
+          "output_channels": 128,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_4h_inpview_128_fp8",
+          "type": "CCTinlayoutFusedSwin4H",
+          "input_channels": 128,
+          "output_channels": 128,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_4h_ds_shifted_128_fp8",
+          "type": "CCTinlayoutFusedSwin4H",
+          "input_channels": 128,
+          "output_channels": 256,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_8h_inpview_256_fp8",
+          "type": "CCTinlayoutFusedSwin8H",
+          "input_channels": 256,
+          "output_channels": 256,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_8h_ds_shifted_256_fp8",
+          "type": "CCTinlayoutFusedSwin8H",
+          "input_channels": 256,
+          "output_channels": 512,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "cc_split_swin_16h_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_split_swin_16h_ffwd_inpview_512_fp8",
+          "type": "CCSplitSwin16HFfwd",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_split_swin_16h_ffwd_proj_inpview_512_fp8",
+          "type": "CCSplitSwin16HFfwdProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_split_swin_16h_qkv_512_fp8",
+          "type": "CCSplitSwin16HQKVAttn",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_split_swin_16h_proj_512_fp8",
+          "type": "CCSplitSwin16HProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "cc_split_swin_16h_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_split_swin_16h_ffwd_512_fp8",
+          "type": "CCSplitSwin16HFfwd",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_split_swin_16h_ffwd_proj_512_fp8",
+          "type": "CCSplitSwin16HFfwdProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_split_swin_16h_qkv_shifted_512_fp8",
+          "type": "CCSplitSwin16HQKVAttn",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        },
+        {
+          "index": 3,
+          "name": "cc_split_swin_16h_proj_pool_512_fp8",
+          "type": "CCSplitSwin16HProjPool",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        },
+        {
+          "index": 4,
+          "name": "cc_split_swin_16h_final_head_512_fp8",
+          "type": "CCSplitSwin16HFinalHead",
+          "input_channels": 512,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_repack_input_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 18,
+      "name": "cc_vit_1d_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_vit_1d_ffn_expand_fp8",
+          "type": "CCVit1DFfnExpand",
+          "input_channels": 1024,
+          "output_channels": 4096,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_vit_1d_ffn_contract_fp8",
+          "type": "CCVit1DFfnContract",
+          "input_channels": 4096,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_vit_1d_qkv_fp8",
+          "type": "CCVit1DQKV",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 3,
+          "name": "cc_vit_1d_attention_fp8",
+          "type": "CCVit1DAttention",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 4,
+          "name": "cc_vit_1d_projection_repack_output_fp8",
+          "type": "CCVit1DProjection",
+          "input_channels": 1024,
+          "output_channels": 1024,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        18,
+        10
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_dec_input_upsample_1024x512_fp8",
+          "type": "CCDecInputUpsample",
+          "input_channels": 1024,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        }
+      ]
+    },
+    {
+      "index": 20,
+      "name": "cc_split_swin_16h_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_split_swin_16h_ffwd_512_fp8",
+          "type": "CCSplitSwin16HFfwd",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_split_swin_16h_ffwd_proj_512_fp8",
+          "type": "CCSplitSwin16HFfwdProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_split_swin_16h_qkv_shifted_512_fp8",
+          "type": "CCSplitSwin16HQKVAttn",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        },
+        {
+          "index": 3,
+          "name": "cc_split_swin_16h_proj_512_fp8",
+          "type": "CCSplitSwin16HProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 21,
+      "name": "cc_split_swin_16h_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_split_swin_16h_ffwd_512_fp8",
+          "type": "CCSplitSwin16HFfwd",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 1,
+          "name": "cc_split_swin_16h_ffwd_proj_512_fp8",
+          "type": "CCSplitSwin16HFfwdProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": 0,
+          "shifted": false
+        },
+        {
+          "index": 2,
+          "name": "cc_split_swin_16h_qkv_shifted_512_fp8",
+          "type": "CCSplitSwin16HQKVAttn",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        },
+        {
+          "index": 3,
+          "name": "cc_split_swin_16h_proj_outview_512_fp8",
+          "type": "CCSplitSwin16HProj",
+          "input_channels": 512,
+          "output_channels": 512,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 22,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        21,
+        8
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_8h_upsample_shifted_256_fp8",
+          "type": "CCTinlayoutFusedSwin8H",
+          "input_channels": 512,
+          "output_channels": 256,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 23,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_8h_outview_shifted_256_fp8",
+          "type": "CCTinlayoutFusedSwin8H",
+          "input_channels": 256,
+          "output_channels": 256,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 24,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        23,
+        6
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_4h_upsample_shifted_128_fp8",
+          "type": "CCTinlayoutFusedSwin4H",
+          "input_channels": 256,
+          "output_channels": 128,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 25,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_4h_outview_shifted_128_fp8",
+          "type": "CCTinlayoutFusedSwin4H",
+          "input_channels": 128,
+          "output_channels": 128,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 26,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        25,
+        4
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_2h_upsample_shifted_64_fp8",
+          "type": "CCTinlayoutFusedSwin2H",
+          "input_channels": 128,
+          "output_channels": 64,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 27,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_2h_outview_shifted_64_fp8",
+          "type": "CCTinlayoutFusedSwin2H",
+          "input_channels": 64,
+          "output_channels": 64,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 28,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        27,
+        2
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_1h_upsample_shifted_32_fp8",
+          "type": "CCTinlayoutFusedSwin1H",
+          "input_channels": 64,
+          "output_channels": 32,
+          "shift_x": -1,
+          "shift_y": 0,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 29,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [],
+      "explicit_input_outputs": [],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_swin_1h_outview_shifted_32_fp8",
+          "type": "CCTinlayoutFusedSwin1H",
+          "input_channels": 32,
+          "output_channels": 32,
+          "shift_x": 0,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    },
+    {
+      "index": 30,
+      "name": "single_layer_block",
+      "explicit_input_blocks": [
+        29,
+        0
+      ],
+      "explicit_input_outputs": [
+        0,
+        1
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "name": "cc_tinlayout_fused_post_block_swin_1h_32_rgb_fp8",
+          "type": "CCTinlayoutFusedPostBlockSwin1H",
+          "input_channels": 32,
+          "output_channels": 3,
+          "shift_x": -1,
+          "shift_y": -1,
+          "shifted": true
+        }
+      ]
+    }
+  ],
+  "layer_count": 76
+}

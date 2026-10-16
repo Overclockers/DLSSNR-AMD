@@ -236,11 +236,8 @@ constexpr unsigned kTemporalLevels = 4;
 constexpr unsigned kTemporalBase = 4;
 constexpr int kTemporalRadius[kTemporalLevels] = {2, 3, 3, 4};
 constexpr float kTemporalReject = 0.50f;
-// The post block's history weight is sigmoid(net) * clamp(s, 0, 1), where s is
-// the model's own f16 weight block70.layer0.blend_scale (0x39EB, the post
-// kernel's +104 pointer; the DLL looks it up next to the layer's weights at
-// 0x180075ce0). The model is pinned to 310.8.0 by its SHA-256, so it is a
-// constant here. TemporalConfig::history_strength scales it.
+// Legacy loose HT trees used this pinned value. Installed models carry their own
+// post-block blend_scale: Small changes it as well as the network's weights.
 constexpr float kPostBlendScale = 0.73974609375f;
 // The pre block's push, PushFSwin + PushPreImage (nr_graph.cpp).
 constexpr uint32_t kPrePushBytes = sizeof(PushFSwin) + sizeof(PushPreImage);
@@ -296,6 +293,7 @@ struct Temporal {
     const nrvk::Kernel* original_pre{};
     const nrvk::Kernel* original_post{};
     float history_strength{1.0f};
+    float post_blend_scale{kPostBlendScale};
     uint32_t parity{};
     // The first-frame latch, the original's plan +0x68. Set after any recorded
     // frame, never cleared by `reset` - reset suppresses consumption, it does
@@ -1167,7 +1165,9 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
     if (config.native_compose && impl_->scaled)
         throw std::runtime_error("native_compose needs model_scale 1: the DLL has no transfer pass to resample through");
     impl_->max_passes = config.max_passes;
-    const auto native = make_native_plan(mw, mh);
+    const Model model = installed ? model_from_pack((data / "dlssnr.bin").string()) : Model::HT;
+    nr::logf("[nr] model: %s", model == Model::CCSmallFP8 ? "CC_SMALL_FP8 (31 blocks)" : "HT (71 blocks)");
+    const auto native = make_native_plan(mw, mh, model);
     std::string plan_name = "compiled native descriptor";
     if (!config.plan.empty()) {
         const auto path = std::filesystem::canonical(config.plan);
@@ -1228,7 +1228,8 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
     const std::filesystem::path i4root = data / "int4";
     if (int4_env == "1") {
         std::error_code ec;
-        const char* missing = !installed ? "not an installed tree"
+        const char* missing = model == Model::CCSmallFP8 ? "CC_SMALL_FP8 uses its original FP8 weights"
+            : !installed ? "not an installed tree"
             : !std::filesystem::is_directory(i4root / "shaders" / "temporal", ec) || !std::filesystem::is_directory(i4root / "vit", ec) ||
                       !std::filesystem::is_regular_file(i4root / "settings.txt", ec) ? "dlssnr-amd/int4/ is incomplete"
             : !std::filesystem::is_regular_file(data / "dlssnr-int4.bin", ec) ? "dlssnr-amd/dlssnr-int4.bin is missing (run install.sh again)"
@@ -1621,6 +1622,16 @@ Runtime::Runtime(const HostDevice& host, const RuntimeConfig& config, const Cont
     }
     if (temporal_config.enable) {
         auto& t = impl_->temporal;
+        const auto weights_root = installed ? data / "model" : root / "artifacts";
+        const std::string post_name = model == Model::CCSmallFP8 ? "block30" : "block70";
+        const auto blend = slurp((weights_root / "inventory/weights" / (post_name + ".layer0.blend_scale.bin")).string());
+        if (blend.size() == 2) {
+            t.post_blend_scale = tin::f16_to_f(uint16_t(blend[0]) | uint16_t(blend[1]) << 8);
+            if (!std::isfinite(t.post_blend_scale)) throw std::runtime_error("invalid post-block blend scale");
+            t.post_blend_scale = std::max(0.f, std::min(1.f, t.post_blend_scale));
+        } else if (model == Model::CCSmallFP8) throw std::runtime_error("missing post-block blend scale in model");
+        nr::logf("[nr] model history blend scale %.9g", t.post_blend_scale);
+
         auto shaders = std::filesystem::canonical(temporal_config.shaders.empty()
             ? (installed ? data / "shaders/temporal" : root / "build/linux/rdna4/network/temporal")
             : std::filesystem::path(temporal_config.shaders));
@@ -2434,7 +2445,7 @@ ControlMaskResult Runtime::record_all(VkCommandBuffer cmd, const ColourFrame& fr
         const float params[12] = {gate ? 1.0f : 0.0f,
                                   engine ? engine->motion_scale_x : 1.0f,
                                   engine ? engine->motion_scale_y : 1.0f,
-                                  t.history_strength * kPostBlendScale,
+                                  t.history_strength * t.post_blend_scale,
                                   float(t.history.w), float(t.history.h),
                                   have_depth ? 1.0f : 0.0f,
                                   have_depth && engine->depth_inverted ? 1.0f : 0.0f,

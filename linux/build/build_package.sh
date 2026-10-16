@@ -126,7 +126,9 @@ bash linux/build/assemble_product_data.sh "$pkg" ${model:+--model "$model"}
 # model-tools/: what install.sh --dll runs to rebuild the model from the DLL.
 mt="$pkg/model-tools"
 mkdir -p -- "$mt"
-cp -- linux/package/model-tools/* "$mt/"
+for file in linux/package/model-tools/*; do
+    if [[ -f "$file" ]]; then cp -- "$file" "$mt/"; fi
+done
 
 # reshade/: copied into the game folder as-is (ReShade as dxgi.dll).
 rs="$pkg/reshade"

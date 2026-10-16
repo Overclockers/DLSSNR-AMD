@@ -38,7 +38,13 @@ model_name=dlssnr.bin
 # The package's model: bundled, or kept there by the first --dll install. Checked by SHA256.
 pkg_model=$here/dlssnr-amd/$model_name
 model_sha256=2b41c888cf4155b8958c665ba64018ab0bd25c85fc71a2b6db86d0d04d1f7fbd
-model_ok() { [[ -f "$1" && "$(sha256sum -- "$1" | cut -d' ' -f1)" == "$model_sha256" ]]; }
+small_model_sha256=dc7edf0c5da0af3c3b2048bafa72f928f4f2eb89f117a37bc4c8863bb2645d8c
+model_ok() {
+    [[ -f "$1" ]] || return 1
+    local digest
+    digest=$(sha256sum -- "$1" | cut -d' ' -f1)
+    [[ "$digest" == "$model_sha256" || "$digest" == "$small_model_sha256" ]]
+}
 
 game="" route="" dll=""
 int4=""
@@ -153,7 +159,7 @@ if [[ $int4 == 1 && ! -x "$here/int4/dlssnr-int4-weights" ]]; then
     echo "This package has no int4 mixed." >&2; exit 1
 fi
 model_src=""
-if [[ -f "$pkg_model" ]] && model_ok "$pkg_model"; then
+if [[ -z "$dll" && -f "$pkg_model" ]] && model_ok "$pkg_model"; then
     :   # the package has the model; it is installed with dlssnr-amd/
 elif [[ -n "$dll" ]]; then
     model_tmp=$(mktemp)
@@ -171,9 +177,14 @@ elif [[ -n "$dll" ]]; then
 elif [[ -f "$pkg_model" ]]; then
     echo "$pkg_model is damaged or from another version; extract it again with --dll." >&2; exit 1
 else
-    echo "The package has no model file: point --dll at nvngx_dlssnr.dll (310.8.0) or its zip." >&2
+    echo "The package has no model file: point --dll at nvngx_dlssnr.dll (310.8.0 for HT, 310.9.16 for Small) or its zip." >&2
     echo "Only the first time: the extracted model is kept in this package's dlssnr-amd/ and used by later installs." >&2
     exit 1
+fi
+if [[ "$(sha256sum -- "${model_src:-$pkg_model}" | cut -d' ' -f1)" == "$small_model_sha256" ]]; then
+    echo "Model: CC_SMALL_FP8 (31 blocks), original FP8 weights."
+    if [[ $int4 == 1 ]]; then echo "The HT int4 calibration does not apply to Small; using Small FP8."; fi
+    int4=0
 fi
 if [[ $int4 == 1 ]]; then
     # The int4 weights are not in the package: made here from this model and the package's recovery tables, installed

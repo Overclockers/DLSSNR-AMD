@@ -5,7 +5,7 @@ code is. For installing and using it, see the [README](../README.md).
 
 ## The network
 
-The NR network of DLSS 5 (`nvngx_dlssnr.dll` 310.8.0) is reimplemented as Vulkan compute shaders in
+The NR network of DLSS 5 (`nvngx_dlssnr.dll` 310.8.0 HT or 310.9.16 CC_SMALL_FP8) is reimplemented as Vulkan compute shaders in
 GLSL: FP8 matrix multiplication through `VK_KHR_cooperative_matrix` and `VK_EXT_shader_float8`, which
 compile to the RDNA4 WMMA instructions. Precision follows the original operation by operation: FP8
 where NVIDIA's kernels use FP8, FP16/FP32 everywhere else. The output is close to NVIDIA's but not

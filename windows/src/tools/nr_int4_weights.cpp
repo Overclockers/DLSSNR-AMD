@@ -11,6 +11,8 @@
 int main(int argc, char** argv) try {
     if (argc != 4) { std::fprintf(stderr, "usage: %s <dlssnr.bin> <int4 data dir> <output file>\n", argv[0]); return 2; }
     const std::filesystem::path pack = std::filesystem::absolute(argv[1]), i4 = std::filesystem::absolute(argv[2]);
+    if (nr::model_from_pack(pack.string()) != nr::Model::HT)
+        throw std::runtime_error("the supplied INT4 calibration supports HT only; CC_SMALL_FP8 uses FP8 weights");
     std::map<std::string, std::string> cfg;
     cfg["NR_I4_DIR"] = (i4 / "vit").string();
     if (std::filesystem::is_directory(i4 / "swin")) cfg["NR_SWI4_DIR"] = (i4 / "swin").string();

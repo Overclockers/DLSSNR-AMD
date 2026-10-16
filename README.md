@@ -5,7 +5,7 @@ graphics cards.
 
 - The network is reimplemented as Vulkan compute shaders.
 - The model is not included. The installer extracts it from your own copy of `nvngx_dlssnr.dll`
-  (version 310.8.0).
+  (310.8.0: HT; 310.9.16: CC_SMALL_FP8).
 - The Linux build, on an RX 9070 XT, checked against NVIDIA's own `nvngx_dlssnr.dll` run on an
   RTX 5090 through NGX (the way a game calls it), with the same input and settings. Single frames:
   PSNR 45.56 dB at 1080p, 47.99 dB at 1440p and 49.06 dB at 4K (higher is closer; the input frame
@@ -263,25 +263,35 @@ Download `DLSSNR-AMD-Vulkan-Windows-*-preview-x86_64.zip` from the releases, unp
 `install.bat`. Pick the game's exe (the one that actually runs, not a launcher), then the route, the
 network (the default network compiled by the AMD driver, the default network as ACO machine code, or
 [int4 mixed](#int4-mixed-optional)) and whether to use the [RenoDX style](#renodx-style-optional). The
-first install asks for `nvngx_dlssnr.dll` 310.8.0 or a zip that contains it and extracts the model
+first install asks for `nvngx_dlssnr.dll` 310.8.0 or 310.9.16, or a zip that contains it and extracts the model
 (below); later installs from the same package do not ask again. Read
 [windows/package/README.txt](windows/package/README.txt) and [Windows](#windows-experimental-preview)
 first.
 
 ## The model
 
-The weights are NVIDIA's and are not part of this project. They are extracted from your own copy of
-`nvngx_dlssnr.dll`, which must be **version 310.8.0**.
+The weights are NVIDIA's and are not part of this project. The installer extracts a model from
+your own copy of `nvngx_dlssnr.dll`:
 
-- Input: the DLL itself, or a zip that contains exactly one `nvngx_dlssnr.dll` (it may be in a
-  subfolder).
-- A DLL of any other version is refused.
-- All 599 extracted entries are checked against known hashes; the model file is written only if every
-  one matches. On Linux it takes about 20 seconds and needs `bash` and `python3`. The Windows package
-  does the same with `model-tools\dlssnr_extract_model.exe` (no Python needed), in about a second.
-- The extracted model is kept in the package's own `dlssnr-amd/dlssnr.bin`. Later installs from
-  that package without `--dll` check its SHA256 and install it from there, so the extraction runs
-  only once per package. With a new package, use `--dll` once more or copy that file over.
+| DLL version | Model selected by default | Blocks / layers | Verified entries | Packed bytes |
+| --- | --- | --- | --- | --- |
+| 310.8.0 | HT | 71 / 152 | 599 | 147,756,560 |
+| 310.9.16 | CC_SMALL_FP8 | 31 / 76 | 256 | 113,917,442 |
+
+Small reduces repeated encoder and decoder blocks and keeps the eight ViT blocks. It runs through the
+existing RDNA4 FP8 kernels; its output differs from HT's. On an RX 9070 XT, a Windows offline comparison
+with the same shaders measured 39–41% less network GPU time. This is network time, not game frame rate;
+method and validation limits: [Small model validation](docs/SMALL-MODEL.md).
+
+- Input: the DLL itself, or a zip containing exactly one `nvngx_dlssnr.dll`, possibly in a subfolder.
+- Only the known DLL hashes are accepted. Every extracted entry must match its model's own hashes.
+- Both DLLs contain the same HT weights. To extract HT from 310.9.16, append `--model ht` to either
+  standalone extraction command below. `--model small` requires 310.9.16.
+- The runtime selects the graph from the model pack. Small also uses its own temporal blend scale.
+- Small uses its original FP8 weights. The shipped HT INT4 calibration does not apply to it; selecting
+  int4 mixed with Small keeps Small FP8 (and ACO Mode on Windows when selected).
+- The extracted model stays in the package's `dlssnr-amd/dlssnr.bin`. Later installs verify and reuse
+  it. Supplying `--dll` (Windows: `-Dll`) again replaces the cached model after extraction succeeds.
 
 Two ways to run it:
 
@@ -293,7 +303,7 @@ bash install.sh "<game folder>" --dll nvngx_dlssnr_310.8.0.zip
 bash model-tools/extract_model.sh nvngx_dlssnr_310.8.0.zip dlssnr.bin
 ```
 
-On success it prints `599 entries, 140.9 MiB` (147,756,560 bytes). Put the file at
+On success it prints `599 entries, 140.9 MiB` for HT or `256 entries, 108.6 MiB` for Small. Put the file at
 `<game folder>/dlssnr-amd/dlssnr.bin`, or pass it to a package build with `NR_MODEL=`.
 
 On Windows, `install.bat` extracts the model by itself; to run the tool on its own:

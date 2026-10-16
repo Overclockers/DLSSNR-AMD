@@ -1,4 +1,4 @@
-// dlssnr_extract_model: make dlssnr.bin from NVIDIA's nvngx_dlssnr.dll (310.8.0).
+// dlssnr_extract_model: make dlssnr.bin from NVIDIA's nvngx_dlssnr.dll (HT 310.8.0 / CC_SMALL_FP8 310.9.16).
 //
 //   dlssnr_extract_model <nvngx_dlssnr.dll> <output dlssnr.bin>
 //
@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "dlssnr_extract_tables.hpp"
+#include "dlssnr_extract_small_tables.hpp"
 
 namespace fs = std::filesystem;
 using u8 = std::uint8_t;
@@ -33,6 +34,7 @@ using u32 = std::uint32_t;
 using u64 = std::uint64_t;
 using i64 = std::int64_t;
 
+static const char kSmallDllSha256[] = "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f";
 static const char kDllSha256[] = "e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e";
 
 struct FormatError : std::runtime_error {  // inspect_nr.py's FormatError (and its crashes)
@@ -165,7 +167,8 @@ struct Pe {
     std::vector<Section> sections;
     u32 resource_rva = 0, resource_size = 0;
 
-    explicit Pe(Span d) : data(d) {
+    const char* resource_name;
+    explicit Pe(Span d, const char* resource = "WEIGHTS_HT") : data(d), resource_name(resource) {
         Span mz = checked(d, 0, 2);
         if (mz.p[0] != 'M' || mz.p[1] != 'Z') throw FormatError("not a PE file");
         u32 pe = rd32(d, 0x3c);
@@ -237,9 +240,9 @@ private:
                         throw FormatError("invalid UTF-16 resource name");
                     }
                 }
-                static const char want[] = "WEIGHTS_HT";
-                is_weights = len == 10;
-                for (u32 j = 0; is_weights && j < 10; ++j)
+                const char* want = resource_name;
+                is_weights = len == std::strlen(want);
+                for (u32 j = 0; is_weights && j < len; ++j)
                     is_weights = label.p[2 * j] == u8(want[j]) && label.p[2 * j + 1] == 0;
             }  // numeric IDs are str(id): never "WEIGHTS_HT"
             if (child & 0x80000000u) {
@@ -500,11 +503,26 @@ static bool parse_block_layer(const std::string& s, int& block, int& layer) {
     return lit("block") && num(block) && lit(".layer") && num(layer) && lit(".layer") && i == s.size();
 }
 
+struct ModelTables {
+    const tables::Layer* layers;
+    unsigned layer_count;
+    const char* const* types;
+    const tables::Entry* entries;
+    unsigned entry_count;
+    const char* const* verify_extra;
+};
+static ModelTables model_tables(bool small) {
+    if (small) return {small_tables::kLayers, small_tables::kLayerCount, small_tables::kTypes,
+        small_tables::kEntries, small_tables::kEntryCount, small_tables::kVerifyExtra};
+    return {tables::kLayers, tables::kLayerCount, tables::kTypes,
+        tables::kEntries, tables::kEntryCount, tables::kVerifyExtra};
+}
 struct Layers {
     std::map<std::pair<int, int>, const tables::Layer*> by_key;
-    Layers() {
-        for (unsigned i = 0; i < tables::kLayerCount; ++i)
-            by_key[{tables::kLayers[i].block, tables::kLayers[i].layer}] = &tables::kLayers[i];
+    const char* const* types;
+    explicit Layers(const ModelTables& t) : types(t.types) {
+        for (unsigned i = 0; i < t.layer_count; ++i)
+            by_key[{t.layers[i].block, t.layers[i].layer}] = &t.layers[i];
     }
     const tables::Layer& at(int b, int l) const {  // the unpackers' layers[(b, l)]: KeyError if absent
         auto it = by_key.find({b, l});
@@ -521,7 +539,7 @@ static void plan_swin_family(const std::vector<Record>& records, const Layers& l
         if (!parse_block_layer(r.name, bi, li)) continue;
         const tables::Layer& l = layers.at(bi, li);
         int ci = l.in, co = l.out, C = std::min(ci, co);
-        std::string type = tables::kTypes[l.type];
+        std::string type = layers.types[l.type];
         static const std::string pre = "CCTinlayoutFusedSwin";
         bool family = type.size() == pre.size() + 2 && type.compare(0, pre.size(), pre) == 0 &&
                       type[pre.size()] >= '0' && type[pre.size()] <= '9' && type[pre.size() + 1] == 'H';
@@ -587,7 +605,7 @@ static void plan_splitswin(const std::vector<Record>& records, const Layers& lay
     for (const Record& r : records) {
         int bi, li;
         if (!parse_block_layer(r.name, bi, li)) continue;
-        auto it = layout.find(tables::kTypes[layers.at(bi, li).type]);
+        auto it = layout.find(layers.types[layers.at(bi, li).type]);
         if (it == layout.end()) continue;
         for (const Part& t : it->second) {
             std::string fn = "unpacked-splitswin/" + r.name + "." + t.name + ".bin";
@@ -616,7 +634,7 @@ static void plan_vit(const std::vector<Record>& records, const Layers& layers, P
     for (const Record& r : records) {
         int bi, li;
         if (!parse_block_layer(r.name, bi, li)) continue;
-        auto it = layout.find(tables::kTypes[layers.at(bi, li).type]);
+        auto it = layout.find(layers.types[layers.at(bi, li).type]);
         if (it == layout.end()) continue;
         const L& v = it->second;
         std::string stem = "unpacked-vit/" + r.name + ".";
@@ -686,9 +704,9 @@ static void plan_preblock(const std::vector<Record>& records, Plan& plan) {
                plan);
 }
 
-static void plan_postblock(const std::vector<Record>& records, Plan& plan) {
+static void plan_postblock(const std::vector<Record>& records, Plan& plan, bool small) {
     const int C = 32, H = 4 * C;
-    plan_fixed(records, "block70.layer0.layer", "unpacked-postblock",
+    plan_fixed(records, small ? "block30.layer0.layer" : "block70.layer0.layer", "unpacked-postblock",
                {{"mlp_expand", 0, 4096, H, C, H / 16, 'm'},
                 {"mlp_contract", 4096, 8192, C, H, C / 16, 'm'},
                 {"residual_scale", 8208, 8272, 0, 0, 0, 'r'},
@@ -721,14 +739,21 @@ static std::vector<u8> read_file(const fs::path& path) {
     return data;
 }
 
-static int run(const fs::path& src, const fs::path& out) {
+static int run(const fs::path& src, const fs::path& out, const std::string& model) {
     const std::vector<u8> dll = read_file(src);
     const Span data{dll.data(), dll.size()};
+    const std::string got = Sha256::of(data.p, size_t(data.n));
+    if (got != kDllSha256 && got != kSmallDllSha256)
+        throw Failure("Unsupported nvngx_dlssnr.dll (SHA256 " + got + "). Use 310.8.0 or 310.9.16.");
+    const bool small = model == "small" || (model == "auto" && got == kSmallDllSha256);
+    if (small && got != kSmallDllSha256) throw Failure("CC_SMALL_FP8 requires nvngx_dlssnr.dll 310.9.16.");
+    const auto selected = model_tables(small);
+
 
     // inspect_nr.py --extract
     std::vector<Record> records;
     try {
-        Pe pe(data);
+        Pe pe(data, small ? "WEIGHTS_CC_SMALL_FP8" : "WEIGHTS_HT");
         std::vector<Span> matches = pe.weights_ht();
         if (matches.size() != 1) throw FormatError("expected exactly one WEIGHTS_HT resource");
         records = parse_weights(matches[0]);
@@ -745,28 +770,26 @@ static int run(const fs::path& src, const fs::path& out) {
                                ? " This is a zip: extract nvngx_dlssnr.dll from it first."
                                : "";
         throw Failure("Cannot read nvngx_dlssnr weights from " + src.u8string() +
-                      " (needs nvngx_dlssnr.dll version 310.8.0): " + e.what() + "." + hint);
+                      " (needs nvngx_dlssnr.dll 310.8.0 or 310.9.16): " + e.what() + "." + hint);
     }
-    std::string got = Sha256::of(data.p, size_t(data.n));
-    if (got != kDllSha256)
-        throw Failure("This is not nvngx_dlssnr 310.8.0 (SHA256 " + got + "). The 310.8.0 DLL is required.");
+
 
     // inventory/weights/ and the five unpackers, in extract_model.sh's order.
     Plan plan;
     for (const Record& r : records) plan["inventory/weights/" + r.name + ".bin"] = copy_of(r.payload, 0, i64(r.payload.n));
-    Layers layers;
+    Layers layers(selected);
     plan_swin_family(records, layers, plan);
     plan_splitswin(records, layers, plan);
     plan_vit(records, layers, plan);
     plan_preblock(records, plan);
-    plan_postblock(records, plan);
+    plan_postblock(records, plan, small);
 
     // pack_model.py --verify
-    const unsigned count = tables::kEntryCount;
+    const unsigned count = selected.entry_count;
     std::vector<const Producer*> entries;
     for (unsigned i = 0; i < count; ++i) {
-        auto it = plan.find(tables::kEntries[i].name);
-        if (it == plan.end()) throw Failure(std::string("missing ") + tables::kEntries[i].name);
+        auto it = plan.find(selected.entries[i].name);
+        if (it == plan.end()) throw Failure(std::string("missing ") + selected.entries[i].name);
         entries.push_back(&it->second);
     }
     std::string index = "NRMODEL1";
@@ -776,11 +799,11 @@ static int run(const fs::path& src, const fs::path& out) {
     put(count, 4);
     put(0, 4);
     u64 header = index.size();
-    for (unsigned i = 0; i < count; ++i) header += 4 + std::strlen(tables::kEntries[i].name) + 16;
+    for (unsigned i = 0; i < count; ++i) header += 4 + std::strlen(selected.entries[i].name) + 16;
     std::vector<u64> offsets;
     u64 off = (header + 255) / 256 * 256;
     for (unsigned i = 0; i < count; ++i) {
-        const char* name = tables::kEntries[i].name;
+        const char* name = selected.entries[i].name;
         u64 size = entries[i]->size();
         offsets.push_back(off);
         put(std::strlen(name), 4);
@@ -805,8 +828,8 @@ static int run(const fs::path& src, const fs::path& out) {
         static const u8 zeros[256] = {};
         for (unsigned i = 0; i < count; ++i) {
             entries[i]->produce(blob);
-            if (Sha256::of(blob.data(), blob.size()) != tables::kEntries[i].sha256) {
-                if (!bad++) first_bad = tables::kEntries[i].name;
+            if (Sha256::of(blob.data(), blob.size()) != selected.entries[i].sha256) {
+                if (!bad++) first_bad = selected.entries[i].name;
             }
             if (bad || blob.empty()) continue;  // f.seek(o); f.write(b"") does not extend the file
             for (; pos < offsets[i]; pos += std::min<u64>(256, offsets[i] - pos))
@@ -814,7 +837,7 @@ static int run(const fs::path& src, const fs::path& out) {
             f.write(reinterpret_cast<const char*>(blob.data()), std::streamsize(blob.size()));
             pos += blob.size();
         }
-        for (const char* const* x = tables::kVerifyExtra; *x; ++x)
+        for (const char* const* x = selected.verify_extra; *x; ++x)
             if (!bad++) first_bad = *x;
         if (bad)
             throw Failure(fmt("%u weight files differ from the tested model, first: %s", bad, first_bad.c_str()));
@@ -838,12 +861,15 @@ static int run(const fs::path& src, const fs::path& out) {
 }
 
 static int main_paths(int argc, const fs::path* args) {
-    if (argc != 3) {
-        std::fprintf(stderr, "usage: dlssnr_extract_model <nvngx_dlssnr.dll> <output dlssnr.bin>\n");
+    if (argc != 3 && argc != 5) {
+        std::fprintf(stderr, "usage: dlssnr_extract_model <nvngx_dlssnr.dll> <output dlssnr.bin> [--model auto|ht|small]\n");
         return 2;
     }
     try {
-        return run(args[1], args[2]);
+        const std::string model = argc == 5 ? args[4].u8string() : "auto";
+        if ((argc == 5 && args[3] != "--model") || (model != "auto" && model != "ht" && model != "small"))
+            throw Failure("--model must be auto, ht or small");
+        return run(args[1], args[2], model);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "%s\n", e.what());
         return 1;

@@ -202,13 +202,15 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--extract", action="store_true")
+    parser.add_argument("--resource", default="WEIGHTS_HT",
+                        choices=("WEIGHTS_HT", "WEIGHTS_CC_SMALL_FP8"))
     args = parser.parse_args()
     data = load_input(args.input)
     pe = PE(data)
     resources = pe.resources()
-    matches = [r for r in resources if "WEIGHTS_HT" in r["path"]]
+    matches = [r for r in resources if args.resource in r["path"]]
     if len(matches) != 1:
-        raise FormatError("expected exactly one WEIGHTS_HT resource")
+        raise FormatError(f"expected exactly one {args.resource} resource")
     resource = matches[0]
     weights = checked(data, resource["file_offset"], resource["size"])
     records = parse_weights(weights)

@@ -55,15 +55,19 @@ without NR; this does not mean int4 mixed is not working.
 The model
 ---------
 The weights are NVIDIA's and are not distributed with this project. They are extracted from your
-own copy of nvngx_dlssnr.dll, and it must be version 310.8.0:
+own copy of nvngx_dlssnr.dll: 310.8.0 selects HT; 310.9.16 selects CC_SMALL_FP8:
 
 - give --dll either the DLL itself or a zip that contains exactly one nvngx_dlssnr.dll
   (it may sit in a subfolder of the zip);
 - a DLL of any other version is refused before anything is installed;
-- every one of the 599 extracted entries is checked against known hashes, and the model is
+- every extracted entry (599 for HT, 256 for Small) is checked against known hashes, and the model is
   written only if all of them match. This takes about 20 seconds.
 
-The result is dlssnr-amd/dlssnr.bin in the game folder (147,756,560 bytes).
+The result is dlssnr-amd/dlssnr.bin in the game folder (HT: 147,756,560 bytes; Small: 113,917,442 bytes).
+Small has 31 blocks instead of 71 and uses the existing RDNA4 FP8 kernels. Its picture differs from HT's.
+The runtime selects the graph and temporal blend scale from the model. HT's int4 calibration is not used
+with Small. Pass --dll again to replace a cached model, or --model ht to the standalone extractor to
+extract HT from either DLL.
 
 This is needed only once: the extracted model is also kept in this package's
 dlssnr-amd/dlssnr.bin, and later installs from this package without --dll check its SHA256 and
@@ -73,7 +77,7 @@ To make the model file without installing anything:
 
     bash model-tools/extract_model.sh /path/to/nvngx_dlssnr_310.8.0.zip dlssnr.bin
 
-It prints "599 entries, 140.9 MiB" when it succeeds. The file can then be copied to
+It prints "599 entries, 140.9 MiB" (HT) or "256 entries, 108.6 MiB" (Small) when it succeeds. The file can then be copied to
 <game folder>/dlssnr-amd/dlssnr.bin by hand.
 
 After installation the game folder has

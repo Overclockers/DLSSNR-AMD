@@ -12,7 +12,7 @@
 # is processed the way RenoDX's DLSS5 add-on does it, and every NR setting moves to [RenoDX] (on the OptiScaler route in
 # the NR Control menu, on the ReShade routes on the Add-ons page).
 #
-# The package carries no model: on the first install the user gives NVIDIA's nvngx_dlssnr.dll (310.8.0)
+# The package carries no model: on the first install the user gives NVIDIA's nvngx_dlssnr.dll (310.8.0 or 310.9.16)
 # or a zip that contains it, and model-tools\dlssnr_extract_model.exe makes dlssnr.bin from it (it only
 # reads the weight data; the DLL is never loaded or run). The model is kept in the package's dlssnr-amd\,
 # so later installs from this package need no DLL.
@@ -264,16 +264,17 @@ if ($bits -eq 32) { Fail "This is a 32-bit game ($exe); this package supports 64
 # The package's dlssnr-amd\dlssnr.bin, or one extracted now from the user's nvngx_dlssnr.dll. Its SHA256
 # has to be the tested model's.
 $ModelSha = '2B41C888CF4155B8958C665BA64018AB0BD25C85FC71A2B6DB86D0D04D1F7FBD'
+$SmallModelSha = 'DC7EDF0C5DA0AF3C3B2048BAFA72F928F4F2EB89F117A37BC4C8863BB2645D8C'
 $model = Join-Path $here 'dlssnr-amd\dlssnr.bin'
 $modelFrom = $model
-if (-not (Test-Path -LiteralPath $model)) {
+if ($Dll -or -not (Test-Path -LiteralPath $model)) {
     if (-not $Dll) {
         Say ''
-        Say 'The package has no model. The first install needs NVIDIA''s nvngx_dlssnr.dll (version 310.8.0), or a zip that contains it.'
+        Say 'The package has no model. The first install needs NVIDIA''s nvngx_dlssnr.dll (310.8.0 for HT, 310.9.16 for Small), or a zip that contains it.'
         Say 'Only its weight data is read; it is never loaded or run. The model is kept in this package, so later installs do not ask again.'
         Add-Type -AssemblyName System.Windows.Forms
         $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Choose nvngx_dlssnr.dll (310.8.0) or a zip that contains it'
+        $dialog.Title = 'Choose nvngx_dlssnr.dll (310.8.0 or 310.9.16) or its zip'
         $dialog.Filter = 'nvngx_dlssnr.dll or zip (*.dll;*.zip)|*.dll;*.zip'
         if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { Fail 'No nvngx_dlssnr.dll chosen; cannot install.' }
         $Dll = $dialog.FileName
@@ -308,9 +309,18 @@ if (-not (Test-Path -LiteralPath $model)) {
         Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-if ((Get-FileHash -LiteralPath $modelFrom -Algorithm SHA256).Hash -ne $ModelSha) {
+$actualModelSha = (Get-FileHash -LiteralPath $modelFrom -Algorithm SHA256).Hash
+if ($actualModelSha -notin @($ModelSha, $SmallModelSha)) {
     Fail "$modelFrom is damaged or not this version's model. Delete it and install again with nvngx_dlssnr.dll."
 }
+if ($actualModelSha -eq $SmallModelSha) {
+    Say 'Model: CC_SMALL_FP8 (31 blocks), original FP8 weights.'
+    if ($Network -eq 'aco-int4-mixed') {
+        Say 'The HT int4 calibration does not apply to Small; using Small FP8 with ACO Mode.'
+        $Network = 'aco'
+    }
+    $haveInt4 = $false
+} else { Say 'Model: HT (71 blocks).' }
 # int4 mixed's weights: made from this model with the package's data, checked against the tested result.
 $int4ModelFrom = $null
 $int4Data = Join-Path $here 'dlssnr-amd\int4'

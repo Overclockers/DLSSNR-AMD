@@ -64,11 +64,16 @@ off. On the command line: -RenoDX on or off.
 Model
 -----
 The package does not contain NVIDIA's model. The first install asks for nvngx_dlssnr.dll
-(version 310.8.0 only) or a zip that contains it. The installer extracts the model with
+(310.8.0 selects HT; 310.9.16 selects CC_SMALL_FP8) or a zip containing it. The installer extracts it with
 model-tools\dlssnr_extract_model.exe (it only reads the weight data; the DLL is never loaded or
 run), checks every entry against known hashes and writes dlssnr-amd\dlssnr.bin only if all
 match. The model stays in this package, so later installs from it (into other games too) do not
 ask again; with a newer package, choose the DLL once more or copy that file over.
+Small has 31 blocks instead of 71 and uses the same RDNA4 FP8 kernels. Its picture differs from HT's.
+The runtime selects its graph and temporal blend scale from the model. Small uses its original FP8
+weights; HT's int4 calibration is not used (int4 mixed selects Small FP8 with ACO Mode).
+To change an existing package's cached model, install again with -Dll pointing at the other DLL.
+The standalone extractor accepts --model ht to choose HT from the newer DLL.
 
 Use
 ---

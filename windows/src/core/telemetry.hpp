@@ -8,7 +8,9 @@
 // clock. Report FLOP/clk, or cycles per WMMA - the clock-independent quantity
 // the hardware ceiling is expressed in - and the numbers become comparable.
 #pragma once
+#ifndef _WIN32
 #include <dirent.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -32,6 +34,10 @@ struct Telemetry {
     }
 
     static std::string find(uint32_t vendor, uint32_t device) {
+#ifdef _WIN32
+        (void)vendor; (void)device;
+        return {};
+#else
         for (int card = 0; card < 8; ++card) {
             const std::string base = "/sys/class/drm/card" + std::to_string(card) + "/device/";
             std::ifstream v(base + "vendor"), d(base + "device");
@@ -48,6 +54,7 @@ struct Telemetry {
             if (!found.empty()) return found;
         }
         return {};
+#endif
     }
     static double read(const std::string& path, double scale) {
         std::ifstream f(path);
