@@ -5,9 +5,11 @@ code is. For installing and using it, see the [README](../README.md).
 
 ## The network
 
-The NR network of DLSS 5 (`nvngx_dlssnr.dll` 310.8.0) is reimplemented as Vulkan compute shaders in
-GLSL: FP8 matrix multiplication through `VK_KHR_cooperative_matrix` and `VK_EXT_shader_float8`, which
-compile to the RDNA4 WMMA instructions. Precision follows the original operation by operation: FP8
+The NR network of DLSS 5 (`nvngx_dlssnr.dll`: the 310.9.16 new model, the Linux default, and the 310.8.0
+old model, which 310.9.16 also contains) is reimplemented as Vulkan compute shaders in GLSL. Both models
+use the same layer types and the same shaders; they differ in the layer table and the weights. The
+shaders do FP8 matrix multiplication through `VK_KHR_cooperative_matrix` and `VK_EXT_shader_float8`,
+which compile to the RDNA4 WMMA instructions. Precision follows the original operation by operation: FP8
 where NVIDIA's kernels use FP8, FP16/FP32 everywhere else. The output is close to NVIDIA's but not
 bit-identical. The weights are read from the user's own DLL at install time
 (`linux/package/model-tools/`); nothing from NVIDIA is in this repository.

@@ -4,17 +4,26 @@ Runs the neural rendering (NR) model of NVIDIA DLSS 5 in games on AMD Radeon RX 
 graphics cards.
 
 - The network is reimplemented as Vulkan compute shaders.
-- The model is not included. The installer extracts it from your own copy of `nvngx_dlssnr.dll`
-  (version 310.8.0).
-- The Linux build, on an RX 9070 XT, checked against NVIDIA's own `nvngx_dlssnr.dll` run on an
-  RTX 5090 through NGX (the way a game calls it), with the same input and settings. Single frames:
-  PSNR 45.56 dB at 1080p, 47.99 dB at 1440p and 49.06 dB at 4K (higher is closer; the input frame
+- The model is not included. The installer extracts it from your own copy of `nvngx_dlssnr.dll`.
+  Version 310.9.16 holds two models: the 310.9.16 new model, its default and faster, and the 310.8.0 old
+  model, so from 310.9.16 alone the installer installs both. Since 0.0.6-linux-preview the Linux version
+  runs the 310.9.16 new model by default; the 310.8.0 old model stays selectable (see
+  [The model](#the-model)). The Windows version still runs the 310.8.0 old model only.
+- The Linux build with the 310.9.16 new model, on an RX 9070 XT, checked against NVIDIA's own `nvngx_dlssnr.dll`
+  310.9.16 run on an RTX 5090 through NGX, the same way as below. Single frames: PSNR 49.15 dB at 1080p,
+  49.40 dB at 1440p and 50.59 dB at 4K, SSIM 0.997. Moving sequences: PSNR 50.6-52.3 dB at 1080p,
+  51.2-52.4 dB at 1440p and 52.2-53.1 dB at 4K, SSIM 0.998, and the output changes from frame to frame by
+  about as much as NVIDIA's. Method, pictures and data:
+  [docs/ngx-verification/310.9.16](docs/ngx-verification/310.9.16/NGX-VERIFICATION.md).
+- The Linux build with the 310.8.0 old model, on an RX 9070 XT, checked against NVIDIA's own `nvngx_dlssnr.dll`
+  310.8.0 run on an RTX 5090 through NGX (the way a game calls it), with the same input and settings.
+  Single frames: PSNR 45.56 dB at 1080p, 47.99 dB at 1440p and 49.06 dB at 4K (higher is closer; the input frame
   itself scores 26-29 dB), SSIM 0.996-0.997 (1 = identical); NVIDIA's DLL gives byte-identical output
   from run to run, so the difference is between the two implementations, not noise. Moving sequences
   with motion vectors and history (a still scene, a moving object, a panning camera, and NR after an
   upscaler; 10 frames each): PSNR 46.3-47.0 dB at 1080p, 50.1-50.9 dB at 1440p and 51.1-51.6 dB at 4K,
   SSIM 0.997-0.998, and the output changes from frame to frame by about as much as NVIDIA's. Method,
-  pictures and data: [docs/ngx-verification](docs/ngx-verification/NGX-VERIFICATION.md).
+  pictures and data: [docs/ngx-verification/310.8.0](docs/ngx-verification/310.8.0/NGX-VERIFICATION.md).
 - **Tested only on an RX 9070 XT.** Other cards are not guaranteed to work.
 - **The Windows version is an experimental preview and has not been tested much.** Game crashes,
   driver resets and other unexpected problems can happen. With its default settings the network is
@@ -66,9 +75,17 @@ instructions the network needs.
 
 ## Performance
 
-GPU time of the network per frame on an RX 9070 XT, **offline benchmark** (network only), measured
-with v0.0.3 (the int4 mixed row with v0.0.4, the Windows ACO Mode row with v0.0.4-win-preview on
-AMD Software 26.9.2):
+310.9.16 new model (Linux, v0.0.6-linux-preview), GPU time of the network per frame on an RX 9070 XT,
+**measured in game** (network only):
+
+| | 1080p | 1440p | 4K |
+| --- | --- | --- | --- |
+| Linux, 310.9.16 new model | 3.27 ms | 5.53 ms | 12.67 ms |
+
+310.8.0 old model, GPU time of the network per frame on an RX 9070 XT, **offline benchmark** (network
+only), measured with v0.0.3 (the int4 mixed row with v0.0.4, the Windows ACO Mode row with v0.0.4-win-preview
+on AMD Software 26.9.2). In games, the network-only time the log shows is lower than in this offline
+benchmark:
 
 | | 1080p | 1440p | 4K |
 | --- | --- | --- | --- |
@@ -79,29 +96,10 @@ AMD Software 26.9.2):
 
 Windows with ACO Mode On and int4 mixed runs at about the same speed as Linux with int4 mixed.
 
-In game (Linux, RX 9070 XT):
-
-| Game | Setting | Output | Render | Model | Without NR | With NR |
-| --- | --- | --- | --- | --- | --- | --- |
-| 007 First Light (v0.0.2) | FSR4 Performance, NR before upscaler | 4K | 1080p | 1080p | 126 fps | 68 fps |
-| 007 First Light (v0.0.2) | FSR4 Performance, NR after upscaler | 4K | 1080p | 4K | 126 fps | 30 fps |
-| Kingdom Come: Deliverance II (v0.0.2) | FSR4 Performance, NR before upscaler | 4K | 1080p | 1080p | 85 fps | 54 fps |
-| Kingdom Come: Deliverance II (v0.0.2) | FSR4 Performance, NR after upscaler | 4K | 1080p | 4K | 85 fps | 27 fps |
-| Dying Light: The Beast | FSR4 Performance, NR before upscaler | 4K | 1080p | 1080p | 97 fps | 56 fps |
-| Dying Light: The Beast | FSR4 Performance, NR after upscaler | 4K | 1080p | 4K | 97 fps | 27 fps |
-| Tomb Raider (2013) | Model resolution 50% | 4K | 4K | 1080p | 130 fps | 60 fps |
-| Tomb Raider (2013) | Model resolution 100% | 4K | 4K | 4K | 130 fps | 30 fps |
-| 7 Days to Die | FSR4 Performance, NR before upscaler | 4K | 1080p | 1080p | 136 fps | 68 fps |
-| 7 Days to Die | FSR4 Performance, NR after upscaler | 4K | 1080p | 4K | 136 fps | 29 fps |
-
-Rows marked (v0.0.2) were measured with version 0.0.2, the others with 0.0.1.
-
 Running the model below the output resolution about doubles the frame rate. In the ReShade routes
 that is the **Model resolution** setting. In the OptiScaler route it is mainly OptiScaler-NR's
 **"Generate model before upscaler"** option, which runs the model on the game's render-resolution
 frame before FSR4 upscales it; OptiScaler-NR has a **Model resolution** setting as well.
-
-None of these measurements use frame generation; the OptiScaler route can turn it on.
 
 ## Supported games
 
@@ -204,14 +202,16 @@ The file itself explains every setting.
 
 A second network, faster than the default one (see Performance): part of its computation runs in int4,
 a lower precision than the original network uses, so its picture differs somewhat from the default
-network's. Both Linux packages and the Windows package have it; it is chosen at install.
+network's. It exists for the 310.8.0 old model only. Both Linux packages and the Windows package have it; it
+is chosen at install (on Linux after choosing the 310.8.0 old model).
 
 On Windows it is choice 3 of the installer's network question (`-Network aco-int4-mixed`) and runs with
 [ACO Mode](#windows-experimental-preview) only: the AMD driver's own compiler makes slow code for the
 int4 kernels, so this version does not offer int4 mixed without ACO Mode. The rest of this section is
 about Linux; the switching, the weights and their check work the same way on Windows.
 
-- The installer asks once (Enter = no), or pass `--int4` or `--no-int4`.
+- With the 310.8.0 old model the installer asks once (Enter = no), or pass `--int4` or `--no-int4` (`--int4`
+  implies `--old-model`).
 - With it, the Steam launch options the installer prints have `VK_ADD_LAYER_PATH` and
   `VK_INSTANCE_LAYERS` (a Vulkan layer in the game folder that int4 mixed needs; on the OptiScaler route
   they name NR Control's layer too). Copy the whole line.
@@ -248,11 +248,12 @@ Download a `DLSSNR-AMD-Vulkan-Linux-*-x86_64.tar.gz` (64-bit games) or `-i686.ta
 the releases, unpack it and run:
 
 ```sh
-bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_dlssnr_310.8.0.zip
+bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_dlssnr_2026_10_16.zip
 ```
 
-The folder is the one holding the game's exe. The installer lists the routes, asks whether to add
-[int4 mixed](#int4-mixed-optional) and whether to turn on the [RenoDX style](#renodx-style-optional),
+The folder is the one holding the game's exe. The installer lists the routes, asks whether to use the
+310.9.16 new model (Enter = yes; with the 310.8.0 old model it then asks whether to add
+[int4 mixed](#int4-mixed-optional)) and whether to turn on the [RenoDX style](#renodx-style-optional),
 extracts the model (below) and prints the Steam launch options to use. `--dll` is needed only for the first install:
 the extracted model is kept and reused for every later one. Needs `bash` and `python3`. See
 [linux/package/README.txt](linux/package/README.txt).
@@ -271,30 +272,44 @@ first.
 ## The model
 
 The weights are NVIDIA's and are not part of this project. They are extracted from your own copy of
-`nvngx_dlssnr.dll`, which must be **version 310.8.0**.
+`nvngx_dlssnr.dll`. Linux takes **version 310.9.16** or **310.8.0**. 310.9.16 already contains the 310.8.0
+model, so with it both models are extracted and installed; 310.8.0 gives the 310.8.0 old model only. Use
+310.9.16 when you can. Windows takes 310.8.0 only.
+
+| File | Model |
+| --- | --- |
+| `dlssnr-amd/dlssnr-small.bin` | the 310.9.16 new model (310.9.16's default, faster); Linux default |
+| `dlssnr-amd/dlssnr.bin` | the 310.8.0 old model (310.9.16 has it too) |
 
 - Input: the DLL itself, or a zip that contains exactly one `nvngx_dlssnr.dll` (it may be in a
   subfolder).
 - A DLL of any other version is refused.
-- All 599 extracted entries are checked against known hashes; the model file is written only if every
-  one matches. On Linux it takes about 20 seconds and needs `bash` and `python3`. The Windows package
-  does the same with `model-tools\dlssnr_extract_model.exe` (no Python needed), in about a second.
-- The extracted model is kept in the package's own `dlssnr-amd/dlssnr.bin`. Later installs from
-  that package without `--dll` check its SHA256 and install it from there, so the extraction runs
-  only once per package. With a new package, use `--dll` once more or copy that file over.
+- Every extracted entry (599 for the 310.8.0 old model, 255 for the 310.9.16 new model) is checked
+  against known hashes; a model file is written only if every one matches. On Linux it takes about 40 seconds for 310.9.16 and 20
+  seconds for 310.8.0, and needs `bash` and `python3`. The Windows package does the same with
+  `model-tools\dlssnr_extract_model.exe` (no Python needed), in about a second.
+- The extracted models are kept in the package's own `dlssnr-amd/`. Later installs from that package
+  without `--dll` check their SHA256 and install them from there, so the extraction runs only once per
+  package. With a new package, use `--dll` once more or copy those files over.
+- Every model the package has is installed. Which one runs is `[Network] Model` in `dlssnr-amd.ini`
+  (`small` = the 310.9.16 new model, `original` = the 310.8.0 old model), set at install
+  (`--new-model` / `--old-model`, or the installer's question) and changeable afterwards; it takes effect
+  after a game restart. If the 310.9.16 new model is chosen but not there (a 310.8.0 DLL), the 310.8.0 old
+  model runs and the log says why.
 
 Two ways to run it:
 
 ```sh
-# while installing: the model goes to <game folder>/dlssnr-amd/dlssnr.bin
-bash install.sh "<game folder>" --dll nvngx_dlssnr_310.8.0.zip
+# while installing: the models go to <game folder>/dlssnr-amd/
+bash install.sh "<game folder>" --dll nvngx_dlssnr_2026_10_16.zip
 
-# on its own: model-tools/ in the package, linux/package/model-tools/ in this repository
-bash model-tools/extract_model.sh nvngx_dlssnr_310.8.0.zip dlssnr.bin
+# on its own, into an existing folder: model-tools/ in the package, linux/package/model-tools/ in this repository
+bash model-tools/extract_model.sh nvngx_dlssnr_2026_10_16.zip <folder>
 ```
 
-On success it prints `599 entries, 140.9 MiB` (147,756,560 bytes). Put the file at
-`<game folder>/dlssnr-amd/dlssnr.bin`, or pass it to a package build with `NR_MODEL=`.
+On success it prints `599 entries, 140.9 MiB` for `dlssnr.bin` (147,756,560 bytes) and
+`255 entries, 108.6 MiB` for `dlssnr-small.bin` (113,917,248 bytes). Put the files in
+`<game folder>/dlssnr-amd/`, or pass them to a package build with `NR_MODEL=` and `NR_MODEL_SMALL=`.
 
 On Windows, `install.bat` extracts the model by itself; to run the tool on its own:
 
@@ -357,8 +372,9 @@ NR_ARCH=x86_64 bash linux/build/build_package.sh
 NR_ARCH=i686   bash linux/build/build_package.sh
 ```
 
-The packages land in `linux/package/`. They contain no model; `install.sh --dll` extracts it. To put a
-model you extracted yourself into a package for your own use, set `NR_MODEL=/path/to/dlssnr.bin`.
+The packages land in `linux/package/`. They contain no model; `install.sh --dll` extracts it. To put
+models you extracted yourself into a package for your own use, set `NR_MODEL=/path/to/dlssnr.bin` (and
+`NR_MODEL_SMALL=/path/to/dlssnr-small.bin` for the 310.9.16 new model).
 Do not share packages that contain the model.
 
 ### Windows package

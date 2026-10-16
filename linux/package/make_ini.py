@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Default dlssnr-amd.ini files for the installer, written with the exact text the code writes (the format strings are
-read out of src/pe/nr_pe_config.cpp, so the two cannot drift): <out>/dlssnr-amd-optiscaler.ini ([Int4Mixed],
+read out of src/pe/nr_pe_config.cpp, so the two cannot drift): <out>/dlssnr-amd-optiscaler.ini ([Network], [Int4Mixed],
 [Preprocess], [RenoDX] and [Log], what the OptiScaler route reads), <out>/dlssnr-amd-optiscaler-renodx.ini (the same
 with [RenoDX] Enabled = 1) and <out>/dlssnr-amd-addon.ini (the ReShade add-on's whole file).
 usage: make_ini.py <nr_pe_config.cpp> <out dir> [--int4]   (--int4: with [Int4Mixed], for an install with int4 mixed)"""
@@ -27,6 +27,8 @@ def body_of(sig):
 
 # [Int4Mixed] only for an install with int4 mixed (the programs built with NR_INT4=1 write it)
 perf = formats(body_of("void write_int4mixed("))[0] if "--int4" in sys.argv[3:] else None
+# [Network]: the small model; the original one with int4 mixed (nr_pe_config.hpp kDefaultNetwork)
+network = formats(body_of("void write_network("))[0] % ("original" if perf else "small")
 prep = formats(body_of("void write_preprocess("))[0]
 rdx = formats(body_of("void write_renodx("))[0]
 logsec = formats(body_of("void write_log("))[0] % (1, 1)
@@ -43,7 +45,7 @@ renodx_values = (1, 'F6', 0, 1.0, 0, 1.0, 1.0, -1.0, 0, 1, 1, 0, 1, 1.0, 1.0, 1.
 renodx = rdx % ((0,) + renodx_values)
 renodx_on = rdx % ((1,) + renodx_values)
 
-(out / "dlssnr-amd-optiscaler.ini").write_text(int4mixed + preprocess + renodx + logsec, encoding="utf-8")
-(out / "dlssnr-amd-optiscaler-renodx.ini").write_text(int4mixed + preprocess + renodx_on + logsec, encoding="utf-8")
-(out / "dlssnr-amd-addon.ini").write_text(dlssnr + own + "\n" + int4mixed + preprocess + renodx + logsec, encoding="utf-8")
+(out / "dlssnr-amd-optiscaler.ini").write_text(network + int4mixed + preprocess + renodx + logsec, encoding="utf-8")
+(out / "dlssnr-amd-optiscaler-renodx.ini").write_text(network + int4mixed + preprocess + renodx_on + logsec, encoding="utf-8")
+(out / "dlssnr-amd-addon.ini").write_text(dlssnr + own + "\n" + network + int4mixed + preprocess + renodx + logsec, encoding="utf-8")
 print("wrote", out / "dlssnr-amd-optiscaler.ini", out / "dlssnr-amd-optiscaler-renodx.ini", out / "dlssnr-amd-addon.ini")

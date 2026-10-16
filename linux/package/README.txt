@@ -14,7 +14,7 @@ Requirements
 
 Install
 -------
-    bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_dlssnr_310.8.0.zip
+    bash install.sh "/path/to/steamapps/common/<game folder>" --dll /path/to/nvngx_dlssnr_2026_10_16.zip
 
 The folder is the one that holds the game's exe (the one that actually runs - for Unreal Engine
 games it is <project>/Binaries/Win64, not the top folder with the launcher). The script lists
@@ -42,8 +42,14 @@ the NR Control menu (see "Use") needs; copy the whole line.
 
 Use the i686 package for 32-bit games and the x86_64 package for 64-bit games.
 
-int4 mixed (optional, in both packages): part of the network runs in int4 and other lower
-precisions; faster, the picture differs somewhat. The installer asks once (Enter = do not install;
+The model: the installer first asks whether to use the new model (Enter = yes), or give --new-model
+or --old-model. Both models are installed whenever the package has them; the choice only sets
+[Network] Model in dlssnr-amd.ini (small = the new model, original = the old model), which can be
+changed later (applied after a game restart). With the new model the installer does not ask about
+int4 mixed; with the old model it asks next. See "The model" below.
+
+int4 mixed (optional, in both packages, old model only): part of the network runs in int4 and other lower
+precisions; faster, the picture differs somewhat. With the old model the installer asks once (Enter = do not install;
 not asked when not run in a terminal: not installed), or give --int4 or --no-int4. With it, the
 launch options the installer prints have VK_ADD_LAYER_PATH and VK_INSTANCE_LAYERS (on the OptiScaler
 route they name NR Control's layer too); int4 mixed needs them, copy the whole line. It is on by default; Ctrl+F11 in
@@ -55,26 +61,33 @@ without NR; this does not mean int4 mixed is not working.
 The model
 ---------
 The weights are NVIDIA's and are not distributed with this project. They are extracted from your
-own copy of nvngx_dlssnr.dll, and it must be version 310.8.0:
+own copy of nvngx_dlssnr.dll, version 310.9.16 or 310.8.0:
 
+    dlssnr-amd/dlssnr-small.bin  the new model (the default model of 310.9.16, faster), used by default
+    dlssnr-amd/dlssnr.bin        the old model (the model of 310.8.0; 310.9.16 has it too)
+
+- use 310.9.16 when you can: it already contains the old model, so with it both models are
+  extracted and installed; 310.8.0 gives the old model only (the game then runs the old model);
 - give --dll either the DLL itself or a zip that contains exactly one nvngx_dlssnr.dll
   (it may sit in a subfolder of the zip);
 - a DLL of any other version is refused before anything is installed;
-- every one of the 599 extracted entries is checked against known hashes, and the model is
-  written only if all of them match. This takes about 20 seconds.
+- every extracted entry (599 for the old model, 255 for the new one) is checked against known
+  hashes, and a model file is written only if all of them match. This takes about 40 seconds for
+  310.9.16 and 20 seconds for 310.8.0.
 
-The result is dlssnr-amd/dlssnr.bin in the game folder (147,756,560 bytes).
+The result is dlssnr-amd/dlssnr-small.bin (113,917,248 bytes) and dlssnr-amd/dlssnr.bin
+(147,756,560 bytes) in the game folder.
 
-This is needed only once: the extracted model is also kept in this package's
-dlssnr-amd/dlssnr.bin, and later installs from this package without --dll check its SHA256 and
-install it from there. With a new package, use --dll once more, or copy that file over.
+This is needed only once: the extracted models are also kept in this package's dlssnr-amd/,
+and later installs from this package without --dll check their SHA256 and install them from
+there. With a new package, use --dll once more, or copy those two files over.
 
-To make the model file without installing anything:
+To make the model files without installing anything (into an existing folder):
 
-    bash model-tools/extract_model.sh /path/to/nvngx_dlssnr_310.8.0.zip dlssnr.bin
+    bash model-tools/extract_model.sh /path/to/nvngx_dlssnr_2026_10_16.zip <folder>
 
-It prints "599 entries, 140.9 MiB" when it succeeds. The file can then be copied to
-<game folder>/dlssnr-amd/dlssnr.bin by hand.
+It prints "599 entries, 140.9 MiB" for dlssnr.bin and "255 entries, 108.6 MiB" for
+dlssnr-small.bin when it succeeds. The files can then be copied to <game folder>/dlssnr-amd/ by hand.
 
 After installation the game folder has
 --------------------------------------

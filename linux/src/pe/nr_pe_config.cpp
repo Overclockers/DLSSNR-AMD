@@ -4,6 +4,7 @@
 #if NR_INT4
 #include "nr_ini_int4.hpp"
 #endif
+#include "nr_ini_network.hpp"
 #include "nr_pe_log.hpp"
 
 #include <windows.h>
@@ -174,6 +175,10 @@ bool parse(const std::string& path, Config& c, bool& legacy) {
         if (name == "log") {
             if (key == "enabled") { if (auto b = parse_bool(value)) c.log_enabled = *b; }
             else if (key == "clearonstart") { if (auto b = parse_bool(value)) c.log_clear = *b; }
+            continue;
+        }
+        if (name == "network") {
+            if (key == "model" && network_value(value) >= 0) c.network = lower(value);
             continue;
         }
 #if NR_INT4
@@ -908,6 +913,20 @@ std::string describe(const Preprocess& p) {
     return text;
 }
 
+void write_network(FILE* f, const std::string& model) {
+    std::fprintf(f,
+        "[Network]\n"
+        "; Which model the NR network runs. Applied after a game restart.\n"
+        "\n"
+        "Model = %s\n"
+        "; small    = the new model (the default model of NVIDIA 310.9.16, faster)\n"
+        "; original = the old model (the model of 310.8.0)\n"
+        "; The new model's weights are extracted from the 310.9.16 nvngx_dlssnr.dll (install.sh --dll); without them\n"
+        "; the old model runs and the log says why.\n"
+        "; int4 mixed exists for the old model only; with Model = small it is not used.\n"
+        "\n", model.c_str());
+}
+
 #if NR_INT4
 void write_int4mixed(FILE* f, bool enabled, const std::string& hotkey, bool keep_both, bool sound) {
     std::fprintf(f,
@@ -1022,6 +1041,7 @@ bool PreprocessFile::poll(const std::string& path, PreprocessConfig& out) {
         tried_ = true;
         // No file: write one with the defaults, off, so there is something to edit.
         if (FILE* f = std::fopen(path.c_str(), "w")) {
+            write_network(f, kDefaultNetwork);
 #if NR_INT4
             write_int4mixed(f, true, "Ctrl+F11", false, true);
 #endif
@@ -1256,6 +1276,7 @@ void Config::save(const std::string& path) {
         "NoiseEveryFrame=%s\n",
         history, white_point, flag(k.noise_every_frame));
     std::fputs("\n", f);
+    write_network(f, network);
 #if NR_INT4
     write_int4mixed(f, int4, int4_hotkey, int4_keep_both, int4_sound);
 #endif

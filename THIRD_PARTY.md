@@ -22,9 +22,10 @@ its licence file.
 | [DXVK](https://github.com/doitsujin/dxvk) from [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom) 11-7 | zlib | Windows package only (the DX9 route), shipped unmodified. |
 
 NVIDIA's `nvngx_dlssnr.dll` and the weights in it are NVIDIA's property. This project contains no part
-of them; `linux/package/model-tools/` reads them from a copy the user supplies. The layer table in
-`*/src/core/nr_native_plan_data.hpp` and `linux/package/model-tools/descriptor.json` describe the
-network's structure (layer types, shapes, offsets), not its weights. `linux/data/int4/` holds the int4
+of them; `linux/package/model-tools/` reads them from a copy the user supplies. The layer tables in
+`*/src/core/nr_native_plan_data.hpp` and `linux/src/core/nr_native_plan_data_small.hpp` and
+`linux/package/model-tools/descriptor.json` and `descriptor-small.json` describe the networks' structure
+(layer types, shapes, offsets), not their weights. `linux/data/int4/` holds the int4
 mixed option's tables: per matrix the clip step index of each row, the correction of each weight against
 plain rounding, and calibration means of the inputs; no weight values. The int4 weights are made at
 install from the user's own model.

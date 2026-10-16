@@ -56,7 +56,7 @@ jobs:
       - name: Check that no model was packaged
         run: |
           for f in linux/package/*.tar.gz; do
-            if tar -tzf "$f" | grep -q 'dlssnr\.bin$'; then echo "model found in $f" >&2; exit 1; fi
+            if tar -tzf "$f" | grep -q 'dlssnr\(-small\)\?\.bin$'; then echo "model found in $f" >&2; exit 1; fi
           done
 
       - uses: actions/upload-artifact@v4
@@ -66,7 +66,7 @@ jobs:
           if-no-files-found: error
 
   windows:
-    if: vars.WINDOWS_PACKAGE != 'off'
+    if: ${{ vars.WINDOWS_PACKAGE != 'off' && !contains(github.ref_name, '-linux-') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

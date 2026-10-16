@@ -1,0 +1,50 @@
+{
+ "tr1080": {
+  "psnr_db": 49.15,
+  "edit_corr": 0.9955,
+  "mean_diff_255": [
+   -0.02,
+   0.0,
+   -0.019
+  ],
+  "rms_255": 0.889,
+  "edit_rms_real": 9.18,
+  "edit_rms_ours": 9.36,
+  "pct_pixels_within_1_255": 86.33,
+  "ssim": 0.99708,
+  "noNR_psnr_db": 28.88,
+  "noNR_ssim": 0.97363
+ },
+ "tr1440": {
+  "psnr_db": 49.4,
+  "edit_corr": 0.9962,
+  "mean_diff_255": [
+   0.001,
+   0.003,
+   0.022
+  ],
+  "rms_255": 0.864,
+  "edit_rms_real": 9.91,
+  "edit_rms_ours": 9.77,
+  "pct_pixels_within_1_255": 87.0,
+  "ssim": 0.99686,
+  "noNR_psnr_db": 28.21,
+  "noNR_ssim": 0.96957
+ },
+ "tr4k": {
+  "psnr_db": 50.59,
+  "edit_corr": 0.9956,
+  "mean_diff_255": [
+   -0.013,
+   -0.013,
+   -0.031
+  ],
+  "rms_255": 0.753,
+  "edit_rms_real": 7.98,
+  "edit_rms_ours": 8.04,
+  "pct_pixels_within_1_255": 92.18,
+  "ssim": 0.99715,
+  "noNR_psnr_db": 30.09,
+  "noNR_ssim": 0.97739
+ }
+}

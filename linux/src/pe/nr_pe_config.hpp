@@ -31,6 +31,14 @@ struct PreprocessConfig {
 bool parse_preprocess_key(PreprocessConfig& p, const std::string& key, const std::string& value);
 // The section, with its comments, as the file holds it.
 void write_preprocess(FILE* f, const PreprocessConfig& p);
+// [Network], with its comments: which model the network runs (nr_ini_network.hpp; the runtime reads it).
+// The default: the small model, or the original one where int4 mixed is installed (it has only that model).
+#if NR_INT4
+constexpr const char* kDefaultNetwork = "original";
+#else
+constexpr const char* kDefaultNetwork = "small";
+#endif
+void write_network(FILE* f, const std::string& model);
 #if NR_INT4
 // [Int4Mixed], with its comments.
 void write_int4mixed(FILE* f, bool enabled, const std::string& hotkey, bool keep_both, bool sound);
@@ -158,6 +166,7 @@ struct Config {
     float model_scale = 1.0f;     // WorkingScale, 0.25..1
     float history = 1.0f;         // previous-frame blend in the post block, 0..1
     float white_point = 1.0f;     // linear-light input only
+    std::string network = kDefaultNetwork;   // [Network] Model: small or original
 #if NR_INT4
     bool int4 = true;             // [Int4Mixed] Enabled: the int4 mixed network at start (no Enabled: on, nr_ini_int4.hpp)
     std::string int4_hotkey = "Ctrl+F11";   // [Int4Mixed] Hotkey: switch int4 mixed / the default network in game; empty: none

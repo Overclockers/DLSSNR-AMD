@@ -13,7 +13,7 @@ Notes for contributors and coding assistants. README.md covers what the project 
 
 ## Things that must stay true
 
-- **No NVIDIA files.** Never commit `nvngx_dlssnr.dll`, the weights, `dlssnr.bin`, tensors extracted
+- **No NVIDIA files.** Never commit `nvngx_dlssnr.dll`, the weights, `dlssnr.bin`, `dlssnr-small.bin`, tensors extracted
   from the DLL, or packages that contain them. The model reaches users only through
   `linux/package/model-tools/extract_model.sh` run on their own DLL. CI checks that packages carry no model.
 - **Host and shaders agree.** The C++ host is compiled with the defines in `*/build/arch/rdna4.sh`,
@@ -65,6 +65,7 @@ Measured facts worth knowing before changing kernels:
   set the repository variable `WINDOWS_PACKAGE` to `off` first (`gh variable set WINDOWS_PACKAGE --body off`).
   A tag with `-win-` in it (`v0.0.4-win-preview`) is a Windows-only release: CI builds no Linux packages and
   does not mark the release latest.
+  A tag with `-linux-` in it (`v0.0.6-linux-preview`) is a Linux-only release: CI builds no Windows package.
 
 ## Style
 

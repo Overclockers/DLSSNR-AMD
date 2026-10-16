@@ -11,6 +11,7 @@
 #   NR_MODEL=dlssnr.bin put this model in the package (made from your own DLL by
 #                       linux/package/model-tools/extract_model.sh); without it
 #                       install.sh needs --dll
+#   NR_MODEL_SMALL=dlssnr-small.bin  with NR_MODEL: the new model too (from the 310.9.16 DLL)
 #   NR_VERSION=...      override the version (default: from the git tags, linux/build/version.sh)
 #
 # x86_64 packages also carry int4/, the int4 mixed option install.sh adds when asked for: the programs built again
@@ -18,6 +19,7 @@
 # install-time weights generator (build_int4.sh), and its dlssnr-amd.ini.
 set -euo pipefail
 model=${NR_MODEL:+$(realpath -- "$NR_MODEL")}
+small=${NR_MODEL_SMALL:+$(realpath -- "$NR_MODEL_SMALL")}
 cd -- "$(dirname -- "$0")/../.."
 arch=${NR_ARCH:-x86_64}
 case "$arch" in x86_64|i686) ;; *) echo "NR_ARCH must be x86_64 or i686" >&2; exit 2;; esac
@@ -121,7 +123,7 @@ lazy=("$out/vulkan_lazy_s.o" "$out/vulkan_lazy_c.o")
 # ---- package ------------------------------------------------------------------
 pkg="$out/package"
 rm -rf -- "$pkg"; mkdir -p -- "$pkg"
-bash linux/build/assemble_product_data.sh "$pkg" ${model:+--model "$model"}
+bash linux/build/assemble_product_data.sh "$pkg" ${model:+--model "$model"} ${model:+${small:+--small-model "$small"}}
 
 # model-tools/: what install.sh --dll runs to rebuild the model from the DLL.
 mt="$pkg/model-tools"
