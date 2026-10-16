@@ -430,12 +430,12 @@ if ($Route -eq 'optiscaler') {
 }
 
 # dlssnr-amd.ini is written at install with every setting and its description (a reinstall writes the defaults
-# again). Uninstall deletes it.
+# again). Uninstall restores any configuration that existed before installation.
 if ($Route -eq 'optiscaler' -and $RenoDX -eq 'on') { $iniSrc = "ini\$Network\dlssnr-amd-optiscaler-renodx.ini" }
 elseif ($Route -eq 'optiscaler') { $iniSrc = "ini\$Network\dlssnr-amd-optiscaler.ini" }
 else { $iniSrc = "ini\$Network\dlssnr-amd-addon.ini" }
 $iniDst = Join-Path $game 'dlssnr-amd.ini'
-Copy-Item -LiteralPath (Join-Path $here $iniSrc) -Destination $iniDst -Force
+Put-File (Join-Path $here $iniSrc) 'dlssnr-amd.ini'
 if ($Route -ne 'optiscaler' -and $RenoDX -eq 'on') {
     # RenoDX style: Enabled = 1 in the [RenoDX] section
     $lines = [System.IO.File]::ReadAllLines($iniDst, [System.Text.Encoding]::UTF8)
@@ -446,7 +446,6 @@ if ($Route -ne 'optiscaler' -and $RenoDX -eq 'on') {
     }
     [System.IO.File]::WriteAllText($iniDst, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 }
-Record-Logs @('dlssnr-amd.ini')
 
 Say ''
 Say "Installed into: $game$(if ($RenoDX -eq 'on') { ' (RenoDX style)' })"
